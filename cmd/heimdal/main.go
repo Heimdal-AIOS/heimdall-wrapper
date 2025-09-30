@@ -590,7 +590,10 @@ func cmdLog(args []string) error {
 }
 
 func cmdWiki(args []string) error {
-    if len(args) == 0 { return errors.New("usage: heimdal wiki [search|show|init] ...") }
+    if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+        wikiUsage()
+        return nil
+    }
     sub := args[0]
     workdir := os.Getenv("HEIMDAL_WORKDIR")
     if workdir == "" {
@@ -623,7 +626,8 @@ func cmdWiki(args []string) error {
         }
         return wikiShow(path, strings.Join(args[1:], " "))
     default:
-        return errors.New("usage: heimdal wiki [search|show|init] ...")
+        wikiUsage()
+        return nil
     }
 }
 
@@ -649,6 +653,22 @@ func wikiShow(path, title string) error {
         return nil
     }
     return fmt.Errorf("page not found: %s", title)
+}
+
+func wikiUsage() {
+    // Attempt to show where wiki.json would be located for context
+    wd := os.Getenv("HEIMDAL_WORKDIR")
+    if wd == "" { wd, _ = os.Getwd() }
+    p, _ := wikimod.Locate(wd)
+    fmt.Println("aioswiki — Heimdal Wiki (RAG manpages)")
+    fmt.Println()
+    fmt.Println("Usage:")
+    fmt.Println("  aioswiki search <query>")
+    fmt.Println("  aioswiki show <title>")
+    fmt.Println("  aioswiki init")
+    fmt.Println("  aioswiki path")
+    fmt.Println()
+    if p != "" { fmt.Println("wiki.json path:", p) }
 }
 
 func fileExists(p string) bool {
