@@ -82,6 +82,8 @@ func run(argv []string) error {
         return cmdLog(args[1:])
     case "wiki":
         return cmdWiki(args[1:])
+    case "aioswiki": // alias for wiki
+        return cmdWiki(args[1:])
     default:
         // shorthand: heimdal <app> [args...]
         app := args[0]
@@ -99,6 +101,9 @@ Usage:
   %s app add <name> --cmd <cmd> [--args "--foo --bar"]
   %s app ls
   %s app rm <name>
+  %s aioswiki search <query>
+  %s aioswiki show <title>
+  %s aioswiki init
   %s wiki search <query>
   %s wiki show <title>
   %s wiki init
@@ -107,7 +112,7 @@ Usage:
 Env/Config:
   Apps manifests in apps/<name>.yaml. Minimal YAML supported: name, cmd, args, env.
 
-`, prog, prog, prog, prog, prog, prog)
+`, prog, prog, prog, prog, prog, prog, prog, prog, prog)
 }
 
 func cmdShell(prefix string) error {
@@ -126,6 +131,10 @@ func cmdShell(prefix string) error {
     }
     env["HEIMDAL"] = "1"
     env["HEIMDAL_PREFIX"] = prefix
+    // Pass the absolute path to this heimdal binary for shell functions
+    if exe, err := os.Executable(); err == nil {
+        env["HEIMDAL_BIN"] = exe
+    }
 
     var cmd *exec.Cmd
     cleanup := func() {}
@@ -139,9 +148,17 @@ func cmdShell(prefix string) error {
 emulate -L zsh
 export HEIMDAL=1
 export HEIMDAL_PREFIX=${HEIMDAL_PREFIX:-"[hd] "}
+export HEIMDAL_BIN=${HEIMDAL_BIN:-""}
 if [[ -f "$HOME/.zshrc" ]]; then
   source "$HOME/.zshrc"
 fi
+# Ensure HEIMDAL_BIN is set (fallback to PATH lookup)
+if [[ -z "$HEIMDAL_BIN" ]]; then
+  HEIMDAL_BIN=$(command -v heimdal 2>/dev/null)
+fi
+# Built-in wiki functions
+function aioswiki() { command "$HEIMDAL_BIN" wiki "$@" }
+function wiki() { aioswiki "$@" }
 function _heimdal_prompt_prefix() {
   local p="${HEIMDAL_PREFIX}"
   if [[ -n "$p" ]] && [[ "${PROMPT}" != ${p}* ]]; then
@@ -165,9 +182,17 @@ precmd_functions+=(_heimdal_prompt_prefix)
         shim := `# Heimdal bash shim
 export HEIMDAL=1
 export HEIMDAL_PREFIX=${HEIMDAL_PREFIX:-"[hd] "}
+export HEIMDAL_BIN=${HEIMDAL_BIN:-""}
 if [ -f "$HOME/.bashrc" ]; then
   . "$HOME/.bashrc"
 fi
+# Ensure HEIMDAL_BIN is set (fallback to PATH lookup)
+if [ -z "$HEIMDAL_BIN" ]; then
+  HEIMDAL_BIN=$(command -v heimdal 2>/dev/null)
+fi
+# Built-in wiki functions
+aioswiki() { command "$HEIMDAL_BIN" wiki "$@"; }
+wiki() { aioswiki "$@"; }
 __heimdal_ps1() {
   case "$PS1" in
     ${HEIMDAL_PREFIX}*) ;;

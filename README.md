@@ -7,7 +7,7 @@ Heimdal is a developer‑first OS wrapper for AI coders. It runs on top of your 
 - Shorthand run: `heimdal <app> [args...]` (alias for `run <app>`), works with any CLI in `PATH`.
 - App manifests: declarative `apps/<name>.yaml` for `cmd`, `args`, `env` (and future policies).
 - Universe sessions: per‑run/session context with `HEIMDAL_*` env vars and context files.
-- Built‑in wiki (RAG manpages): `wiki.json` + `heimdal wiki search/show/init`.
+- Built‑in wiki (RAG manpages): `wiki.json` + `heimdal aioswiki search/show/init` (also available as `wiki`).
 
 ## Quick Start
 - Requirements: Go 1.21+
@@ -19,9 +19,9 @@ Heimdal is a developer‑first OS wrapper for AI coders. It runs on top of your 
   - List: `./bin/heimdal app ls`
   - Remove: `./bin/heimdal app rm claude`
 - Wiki:
-  - Init: `./bin/heimdal wiki init` (uses repo `wiki.json` if present, else `~/.heimdall/wiki.json`)
-  - Search: `./bin/heimdal wiki search "ai-os"`
-  - Show: `./bin/heimdal wiki show "Welcome to Heimdal AI:OS"`
+  - Init: `./bin/heimdal aioswiki init` (uses repo `wiki.json` if present, else `~/.heimdall/wiki.json`)
+  - Search: `./bin/heimdal aioswiki search "ai-os"`
+  - Show: `./bin/heimdal aioswiki show "Welcome to Heimdal AI:OS"`
 
 ## Manifests (apps/<name>.yaml)
 ```yaml
