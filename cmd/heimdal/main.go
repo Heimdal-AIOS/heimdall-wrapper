@@ -232,6 +232,20 @@ function project-open() { command "$HEIMDAL_BIN" project-open "$@" }
 if [[ -n "$HEIMDAL_ENTRY_ECHO" ]]; then
   echo "$HEIMDAL_ENTRY_ECHO"
 fi
+# Helper scripts so child processes can call 'aioswiki' directly
+HEIMDAL_HELPER_DIR="$ZDOTDIR/.bin"
+mkdir -p "$HEIMDAL_HELPER_DIR"
+cat > "$HEIMDAL_HELPER_DIR/aioswiki" <<EOF
+#!/bin/sh
+exec "$HEIMDAL_BIN" wiki "$@"
+EOF
+chmod +x "$HEIMDAL_HELPER_DIR/aioswiki"
+cat > "$HEIMDAL_HELPER_DIR/wiki" <<EOF
+#!/bin/sh
+exec "$HEIMDAL_BIN" wiki "$@"
+EOF
+chmod +x "$HEIMDAL_HELPER_DIR/wiki"
+export PATH="$HEIMDAL_HELPER_DIR:$PATH"
 ` + func() string { if restrictOps { return `
 # Restrict mutating commands inside project shell
 function _heimdal_block(){ echo "[heimdal] disabled here. Use 'heimdal newfile/mkdir/annotate/export' instead." >&2; return 1 }
@@ -318,6 +332,19 @@ project-open() { command "$HEIMDAL_BIN" project-open "$@"; }
 if [ -n "$HEIMDAL_ENTRY_ECHO" ]; then
   echo "$HEIMDAL_ENTRY_ECHO"
 fi
+HEIMDAL_HELPER_DIR="$(mktemp -d 2>/dev/null || echo /tmp/heimdal-helpers-$$)"
+mkdir -p "$HEIMDAL_HELPER_DIR"
+cat > "$HEIMDAL_HELPER_DIR/aioswiki" <<EOF
+#!/bin/sh
+exec "$HEIMDAL_BIN" wiki "$@"
+EOF
+chmod +x "$HEIMDAL_HELPER_DIR/aioswiki"
+cat > "$HEIMDAL_HELPER_DIR/wiki" <<EOF
+#!/bin/sh
+exec "$HEIMDAL_BIN" wiki "$@"
+EOF
+chmod +x "$HEIMDAL_HELPER_DIR/wiki"
+export PATH="$HEIMDAL_HELPER_DIR:$PATH"
 ` + func() string { if restrictOps { return `
 # Restrict mutating commands inside project shell
 _heimdal_block(){ echo "[heimdal] disabled here. Use 'heimdal newfile/mkdir/annotate/export' instead." >&2; return 1; }
@@ -533,8 +560,11 @@ func cmdLog(args []string) error {
 func cmdWiki(args []string) error {
     if len(args) == 0 { return errors.New("usage: heimdal wiki [search|show|init] ...") }
     sub := args[0]
-    cwd, _ := os.Getwd()
-    path, err := wikimod.Locate(cwd)
+    workdir := os.Getenv("HEIMDAL_WORKDIR")
+    if workdir == "" {
+        workdir, _ = os.Getwd()
+    }
+    path, err := wikimod.Locate(workdir)
     if err != nil { return err }
     switch sub {
     case "init":
@@ -546,9 +576,19 @@ func cmdWiki(args []string) error {
         return nil
     case "search":
         if len(args) < 2 { return errors.New("usage: heimdal wiki search <query>") }
+        if !fileExists(path) {
+            fmt.Printf("no wiki.json found at %s\n", path)
+            fmt.Println("run: heimdal aioswiki init")
+            return nil
+        }
         return wikiSearch(path, strings.Join(args[1:], " "))
     case "show":
         if len(args) < 2 { return errors.New("usage: heimdal wiki show <title>") }
+        if !fileExists(path) {
+            fmt.Printf("no wiki.json found at %s\n", path)
+            fmt.Println("run: heimdal aioswiki init")
+            return nil
+        }
         return wikiShow(path, strings.Join(args[1:], " "))
     default:
         return errors.New("usage: heimdal wiki [search|show|init] ...")
@@ -577,6 +617,11 @@ func wikiShow(path, title string) error {
         return nil
     }
     return fmt.Errorf("page not found: %s", title)
+}
+
+func fileExists(p string) bool {
+    st, err := os.Stat(p)
+    return err == nil && !st.IsDir()
 }
 
 
