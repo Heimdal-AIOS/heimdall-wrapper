@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/heimdal/fuzzy-commands.schema.json",
+  "title": "Heimdal Fuzzy Commands Config",
+  "type": "object",
+  "properties": {
+    "$schema": {"type": "string"},
+    "version": {"type": "integer", "enum": [1]},
+    "aliases": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "wiki_aliases": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "commands": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "fuzzy": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "threshold": {"type": "number", "minimum": 0, "maximum": 1},
+        "auto_execute": {"type": "boolean"}
+      },
+      "required": ["enabled", "threshold"],
+      "additionalProperties": true
+    }
+  },
+  "required": ["version", "commands", "fuzzy"],
+  "additionalProperties": true
+}
+

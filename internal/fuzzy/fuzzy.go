@@ -8,8 +8,11 @@ import (
 )
 
 type Config struct {
+    Version  int               `json:"version"`
+    Schema   string            `json:"$schema"`
     Aliases  map[string]string `json:"aliases"`
     Commands []string          `json:"commands"`
+    WikiAliases []string       `json:"wiki_aliases"`
     Fuzzy    struct {
         Enabled     bool    `json:"enabled"`
         Threshold   float64 `json:"threshold"`
@@ -34,6 +37,20 @@ func Load() Config {
         }
     }
     return cfg
+}
+
+// EffectiveWikiAliases returns domain-specific wiki aliases, falling back to aliases that map to wiki/aioswiki.
+func (c Config) EffectiveWikiAliases() []string {
+    if len(c.WikiAliases) > 0 {
+        return c.WikiAliases
+    }
+    out := []string{}
+    for k, v := range c.Aliases {
+        if v == "aioswiki" || v == "wiki" {
+            out = append(out, k)
+        }
+    }
+    return out
 }
 
 // Suggest returns best match from candidates with a normalized score [0..1].
@@ -100,4 +117,3 @@ func jaroWinkler(s1, s2 string) float64 {
     if jw > 1 { jw = 1 }
     return jw
 }
-

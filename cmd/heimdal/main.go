@@ -104,6 +104,8 @@ func run(argv []string) error {
         return cmdWiki(args[1:])
     case "aioswiki": // alias for wiki
         return cmdWiki(args[1:])
+    case "config":
+        return cmdConfig(args[1:])
     default:
         // Try to interpret first token as a project
         first := args[0]
@@ -154,6 +156,7 @@ func usage(prog string) {
     fmt.Printf("  %s wiki show <title>\n", prog)
     fmt.Printf("  %s wiki init\n", prog)
     fmt.Printf("  %s [--profile=permissive|restricted] [--prompt-prefix=\"[hd] \"] <app> [args...]  (shorthand)\n", prog)
+    fmt.Printf("  %s config fuzzy show|reload\n", prog)
     fmt.Println("\nEnv/Config:")
     fmt.Println("  Apps manifests in apps/<name>.yaml. Minimal YAML supported: name, cmd, args, env.")
     fmt.Println("  Shell config: ./shell.json or ~/.heimdall/shell.json with keys: shell, virtual_path, prompt_template (use __VPATH__ token).")
@@ -748,6 +751,63 @@ func splitArgs(s string) []string {
     // Do not attempt full shell parsing; split on spaces.
     parts := strings.Fields(s)
     return parts
+}
+
+// --- Config commands ---
+func cmdConfig(args []string) error {
+    if len(args) == 0 { return errors.New("usage: heimdal config fuzzy [show|reload]") }
+    domain := args[0]
+    switch domain {
+    case "fuzzy":
+        if len(args) < 2 { return errors.New("usage: heimdal config fuzzy [show|reload]") }
+        switch args[1] {
+        case "show":
+            cfg := fuzzy.Load()
+            b, _ := json.MarshalIndent(cfg, "", "  ")
+            fmt.Println(string(b))
+            return nil
+        case "reload":
+            return regenerateWikiHelpers()
+        default:
+            return errors.New("usage: heimdal config fuzzy [show|reload]")
+        }
+    default:
+        return fmt.Errorf("unknown config domain: %s", domain)
+    }
+}
+
+func regenerateWikiHelpers() error {
+    cfg := fuzzy.Load()
+    // Determine session helper dir
+    sess := os.Getenv("HEIMDAL_SESSION")
+    if sess == "" {
+        return errors.New("not in a Heimdal session (HEIMDAL_SESSION not set)")
+    }
+    home, err := os.UserHomeDir()
+    if err != nil { return err }
+    dir := filepath.Join(home, ".heimdall", "sessions", sess, "bin")
+    if err := os.MkdirAll(dir, 0o755); err != nil { return err }
+    bin := os.Getenv("HEIMDAL_BIN")
+    if bin == "" { bin = "heimdal" }
+    // Ensure core helpers
+    if err := writeHelper(dir, "aioswiki", bin); err != nil { return err }
+    if err := writeHelper(dir, "wiki", bin); err != nil { return err }
+    // Domain aliases
+    for _, a := range cfg.EffectiveWikiAliases() {
+        if a == "aioswiki" || a == "wiki" { continue }
+        if err := writeHelper(dir, a, bin); err != nil { return err }
+    }
+    fmt.Println("fuzzy helpers regenerated in:", dir)
+    return nil
+}
+
+func writeHelper(dir, name, bin string) error {
+    sh := "#!/bin/sh\nBIN=\"${HEIMDAL_BIN:-$(command -v " + bin + " 2>/dev/null)}\"\n" +
+        "if [ -z \"$BIN\" ]; then echo \"heimdal binary not found (set HEIMDAL_BIN or add to PATH)\" >&2; exit 127; fi\n" +
+        "exec \"$BIN\" wiki \"$@\"\n"
+    path := filepath.Join(dir, name)
+    if err := os.WriteFile(path, []byte(sh), 0o755); err != nil { return err }
+    return nil
 }
 
 // ShellConfig holds optional shell customization.

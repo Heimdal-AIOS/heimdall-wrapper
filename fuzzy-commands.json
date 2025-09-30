@@ -1,9 +1,12 @@
 {
+  "$schema": "./fuzzy-commands.schema.json",
+  "version": 1,
   "aliases": {
     "aios": "aioswiki",
     "w": "aioswiki",
     "wiki": "aioswiki"
   },
+  "wiki_aliases": ["aios", "w", "wiki"],
   "commands": [
     "aioswiki", "wiki", "project-init", "project-open", "project-info",
     "run", "shell", "app", "log"
@@ -14,4 +17,3 @@
     "auto_execute": false
   }
 }
-
