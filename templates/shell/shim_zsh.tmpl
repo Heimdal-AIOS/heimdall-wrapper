@@ -1,0 +1,49 @@
+# Heimdal zsh shim (templated)
+emulate -L zsh
+export HEIMDAL=1
+export HEIMDAL_PREFIX=${HEIMDAL_PREFIX:-"[hd] "}
+export HEIMDAL_BIN=${HEIMDAL_BIN:-""}
+RC_MODE=${HEIMDAL_RC_MODE:-project-then-os}
+PROJ_RC=${HEIMDAL_PROJECT_RC_ZSH}
+case "$RC_MODE" in
+  project-only)
+    if [[ -f "$PROJ_RC" ]]; then source "$PROJ_RC"; fi ;;
+  project-then-os)
+    if [[ -f "$PROJ_RC" ]]; then source "$PROJ_RC"; fi
+    if [[ -f "$HOME/.zshrc" ]]; then source "$HOME/.zshrc"; fi ;;
+  os-then-project)
+    if [[ -f "$HOME/.zshrc" ]]; then source "$HOME/.zshrc"; fi
+    if [[ -f "$PROJ_RC" ]]; then source "$PROJ_RC"; fi ;;
+  *)
+    if [[ -f "$HOME/.zshrc" ]]; then source "$HOME/.zshrc"; fi ;;
+esac
+if [[ -z "$HEIMDAL_BIN" ]]; then HEIMDAL_BIN=$(command -v heimdal 2>/dev/null); fi
+function aioswiki() { command "$HEIMDAL_BIN" wiki "$@" }
+function wiki() { aioswiki "$@" }
+function project-init() { command "$HEIMDAL_BIN" project-init "$@" }
+function project-open() { command "$HEIMDAL_BIN" project-open "$@" }
+if [[ -n "$HEIMDAL_ENTRY_ECHO" ]]; then echo "$HEIMDAL_ENTRY_ECHO"; fi
+# Helpers on PATH
+HEIMDAL_HELPER_DIR="${HEIMDAL_HELPER_DIR:-$HOME/.heimdall/sessions/$HEIMDAL_SESSION/bin}"
+mkdir -p "$HEIMDAL_HELPER_DIR"
+cat > "$HEIMDAL_HELPER_DIR/aioswiki" <<'EOF'
+#!/bin/sh
+BIN="${HEIMDAL_BIN:-$(command -v heimdal 2>/dev/null)}"
+if [ -z "$BIN" ]; then echo "heimdal binary not found (set HEIMDAL_BIN or add to PATH)" >&2; exit 127; fi
+exec "$BIN" wiki "$@"
+EOF
+chmod +x "$HEIMDAL_HELPER_DIR/aioswiki"
+export PATH="$HEIMDAL_HELPER_DIR:$PATH"
+{{RESTRICT_BLOCK}}
+function __heimdal_vpath(){ local vr="$HEIMDAL_VROOT"; local p="$PWD"; if [[ -n "$vr" && "$p" == ${vr}* ]]; then local rel="${p#$vr}"; if [[ -z "$rel" ]]; then echo "/"; else echo "/$rel"; fi else echo "$p"; fi }
+function _heimdal_prompt_prefix() {
+  local tmpl="${HEIMDAL_PROMPT_TMPL}"; local who="${HEIMDAL_USER}"; local host="${HEIMDAL_HOST}";
+  [[ -z "$who" ]] && who=$(whoami); [[ -z "$host" ]] && host="%m"
+  if [[ -n "$tmpl" ]]; then local v=""; if [[ "$HEIMDAL_VPATH" == "1" && -n "$HEIMDAL_VROOT" ]]; then v=$(__heimdal_vpath); fi; local rendered="${tmpl//__VPATH__/$v}"; PROMPT="${HEIMDAL_PREFIX}${rendered} "; return; fi
+  if [[ "$HEIMDAL_VPATH" == "1" && -n "$HEIMDAL_VROOT" ]]; then local v=$(__heimdal_vpath); PROMPT="${HEIMDAL_PREFIX}${who}@${host} ${v} %(!.#.$) "; return; fi
+  local p="${HEIMDAL_PREFIX}"; if [[ -n "$p" ]] && [[ "${PROMPT}" != ${p}* ]]; then PROMPT="${p}${PROMPT}"; fi
+}
+precmd_functions+=(_heimdal_prompt_prefix)
+chpwd_functions+=(__heimdal_write_vpath)
+function __heimdal_write_vpath(){ local f="$HEIMDAL_VPATH_FILE"; if [[ -n "$f" ]]; then __heimdal_vpath >| "$f" 2>/dev/null; fi }
+

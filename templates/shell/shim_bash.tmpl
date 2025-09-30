@@ -1,0 +1,34 @@
+# Heimdal bash shim (templated)
+export HEIMDAL=1
+export HEIMDAL_PREFIX=${HEIMDAL_PREFIX:-"[hd] "}
+export HEIMDAL_BIN=${HEIMDAL_BIN:-""}
+RC_MODE=${HEIMDAL_RC_MODE:-project-then-os}
+PROJ_RC=${HEIMDAL_PROJECT_RC_BASH}
+case "$RC_MODE" in
+  project-only) [ -f "$PROJ_RC" ] && . "$PROJ_RC" ;;
+  project-then-os) [ -f "$PROJ_RC" ] && . "$PROJ_RC"; [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc" ;;
+  os-then-project) [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"; [ -f "$PROJ_RC" ] && . "$PROJ_RC" ;;
+  *) [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc" ;;
+esac
+if [ -z "$HEIMDAL_BIN" ]; then HEIMDAL_BIN=$(command -v heimdal 2>/dev/null); fi
+aioswiki() { command "$HEIMDAL_BIN" wiki "$@"; }
+wiki() { aioswiki "$@"; }
+project-init() { command "$HEIMDAL_BIN" project-init "$@"; }
+project-open() { command "$HEIMDAL_BIN" project-open "$@"; }
+if [ -n "$HEIMDAL_ENTRY_ECHO" ]; then echo "$HEIMDAL_ENTRY_ECHO"; fi
+HEIMDAL_HELPER_DIR="${HEIMDAL_HELPER_DIR:-$HOME/.heimdall/sessions/$HEIMDAL_SESSION/bin}"
+mkdir -p "$HEIMDAL_HELPER_DIR"
+cat > "$HEIMDAL_HELPER_DIR/aioswiki" <<'EOF'
+#!/bin/sh
+BIN="${HEIMDAL_BIN:-$(command -v heimdal 2>/dev/null)}"
+if [ -z "$BIN" ]; then echo "heimdal binary not found (set HEIMDAL_BIN or add to PATH)" >&2; exit 127; fi
+exec "$BIN" wiki "$@"
+EOF
+chmod +x "$HEIMDAL_HELPER_DIR/aioswiki"
+export PATH="$HEIMDAL_HELPER_DIR:$PATH"
+{{RESTRICT_BLOCK}}
+__heimdal_vpath(){ vr="$HEIMDAL_VROOT"; p="$PWD"; case "$p" in "$vr"*) rel="${p#$vr}"; [ -z "$rel" ] && echo "/" || echo "/$rel" ;; *) echo "$p" ;; esac }
+__heimdal_write_vpath(){ f="$HEIMDAL_VPATH_FILE"; [ -n "$f" ] && __heimdal_vpath > "$f" 2>/dev/null || true }
+__heimdal_ps1(){ tmpl="${HEIMDAL_PROMPT_TMPL}"; who="${HEIMDAL_USER}"; host="${HEIMDAL_HOST}"; [ -z "$who" ] && who="$(whoami)"; [ -z "$host" ] && host="$(hostname)"; if [ -n "$tmpl" ]; then v=""; if [ "$HEIMDAL_VPATH" = "1" ] && [ -n "$HEIMDAL_VROOT" ]; then v="$(__heimdal_vpath)"; fi; rendered="${tmpl//__VPATH__/$v}"; PS1="${HEIMDAL_PREFIX}${rendered} "; return; fi; if [ "$HEIMDAL_VPATH" = "1" ] && [ -n "$HEIMDAL_VROOT" ]; then v="$(__heimdal_vpath)"; PS1="${HEIMDAL_PREFIX}${who}@${host} ${v} $ "; return; fi; case "$PS1" in ${HEIMDAL_PREFIX}*) ;; *) PS1="${HEIMDAL_PREFIX}${PS1}" ;; esac }
+PROMPT_COMMAND="__heimdal_ps1; __heimdal_write_vpath; ${PROMPT_COMMAND}"
+

@@ -1,25 +1,14 @@
 package main
 
 import (
-    "archive/zip"
-    "bytes"
     "errors"
     "fmt"
-    "io"
     "os"
-    "os/exec"
     "path/filepath"
     "strings"
-    "runtime"
-    "io/fs"
-    "os/signal"
-    "encoding/json"
-    "time"
 
     "heimdal/internal/config"
     "heimdal/internal/fuzzy"
-    "heimdal/internal/manifest"
-    "heimdal/internal/universe"
 )
 
 func main() {
@@ -100,19 +89,11 @@ func run(argv []string) error {
         if len(args) >= 2 { name = args[1] }
         return cmdProjectInfo(name)
     case "project-pack":
-        if os.Getenv("HEIMDAL_SESSION") != "" { return errors.New("run project-pack outside Heimdal shell") }
-        if len(args) < 2 { return errors.New("usage: heimdal project-pack <name> [-o output.zip]") }
-        name := args[1]
-        out := ""
-        for i:=2;i<len(args);i++{ if args[i]=="-o" && i+1<len(args){ out=args[i+1]; i++ } }
-        return cmdProjectPack(name, out)
+        return cmdProjectPack(args[1:])
     case "project-unpack":
-        if os.Getenv("HEIMDAL_SESSION") != "" { return errors.New("run project-unpack outside Heimdal shell") }
-        if len(args) < 2 { return errors.New("usage: heimdal project-unpack <archive.zip> [--dest DIR]") }
-        archive := args[1]
-        dest := ""
-        for i:=2;i<len(args);i++{ if args[i]=="--dest" && i+1<len(args){ dest=args[i+1]; i++ } }
-        return cmdProjectUnpack(archive, dest)
+        return cmdProjectUnpack(args[1:])
+    case "project-migrate":
+        return cmdProjectMigrate(args[1:])
     case "mkdir":
         return cmdFSMakeDir(args[1:])
     case "newfile":
@@ -186,6 +167,7 @@ func usage(prog string) {
         fmt.Printf("  %s project-info [name]\n", prog)
         fmt.Printf("  %s project-pack <name> [-o output.zip]\n", prog)
         fmt.Printf("  %s project-unpack <archive.zip> [--dest DIR]\n", prog)
+        fmt.Printf("  %s project-migrate [name]\n", prog)
         fmt.Printf("  %s aioswiki search|show|init|path\n", prog)
         fmt.Printf("  %s app add|ls|rm ...\n", prog)
         fmt.Printf("  %s run <app> [args...]\n", prog)
@@ -195,7 +177,7 @@ func usage(prog string) {
         fmt.Printf("  %s suggest \"freeform command\"\n", prog)
     } else {
         fmt.Println("Inside Heimdal ([hd] prompt):")
-        fmt.Println("  aioswiki search <q> | show <title> | init | path")
+        fmt.Println("  aioswiki search <q> | show <title> | init")
         fmt.Println("  project-open <name> | project-init <name>")
         fmt.Println("  app add|ls|rm ...  | run <app> [args...]")
         fmt.Printf("  %s [--profile=permissive|restricted] [--prompt-prefix=\"[hd] \"] <app> [args...]\n", prog)
