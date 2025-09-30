@@ -1,6 +1,6 @@
 {
   "shell": "zsh",
   "virtual_path": true,
-  "prompt_template": "${USER}@${HOST} __VPATH__ $"
+  "prompt_template": "${USER}@${HOST} __VPATH__ $",
+  "entry_echo": "zsh ai:os default"
 }
-

@@ -181,6 +181,9 @@ func cmdShellWith(prefix, fsRoot string, restrictOps bool, extraEnv map[string]s
     if cfg.PromptTemplate != "" {
         env["HEIMDAL_PROMPT_TMPL"] = cfg.PromptTemplate
     }
+    if cfg.EntryEcho != "" {
+        env["HEIMDAL_ENTRY_ECHO"] = cfg.EntryEcho
+    }
     user := os.Getenv("USER")
     host, _ := os.Hostname()
     env["HEIMDAL_USER"] = user
@@ -202,9 +205,20 @@ emulate -L zsh
 export HEIMDAL=1
 export HEIMDAL_PREFIX=${HEIMDAL_PREFIX:-"[hd] "}
 export HEIMDAL_BIN=${HEIMDAL_BIN:-""}
-if [[ -f "$HOME/.zshrc" ]]; then
-  source "$HOME/.zshrc"
-fi
+RC_MODE=${HEIMDAL_RC_MODE:-project-then-os}
+PROJ_RC=${HEIMDAL_PROJECT_RC_ZSH}
+case "$RC_MODE" in
+  project-only)
+    if [[ -f "$PROJ_RC" ]]; then source "$PROJ_RC"; fi ;;
+  project-then-os)
+    if [[ -f "$PROJ_RC" ]]; then source "$PROJ_RC"; fi
+    if [[ -f "$HOME/.zshrc" ]]; then source "$HOME/.zshrc"; fi ;;
+  os-then-project)
+    if [[ -f "$HOME/.zshrc" ]]; then source "$HOME/.zshrc"; fi
+    if [[ -f "$PROJ_RC" ]]; then source "$PROJ_RC"; fi ;;
+  *)
+    if [[ -f "$HOME/.zshrc" ]]; then source "$HOME/.zshrc"; fi ;;
+esac
 # Ensure HEIMDAL_BIN is set (fallback to PATH lookup)
 if [[ -z "$HEIMDAL_BIN" ]]; then
   HEIMDAL_BIN=$(command -v heimdal 2>/dev/null)
@@ -215,6 +229,9 @@ function wiki() { aioswiki "$@" }
 # Project helpers
 function project-init() { command "$HEIMDAL_BIN" project-init "$@" }
 function project-open() { command "$HEIMDAL_BIN" project-open "$@" }
+if [[ -n "$HEIMDAL_ENTRY_ECHO" ]]; then
+  echo "$HEIMDAL_ENTRY_ECHO"
+fi
 ` + func() string { if restrictOps { return `
 # Restrict mutating commands inside project shell
 function _heimdal_block(){ echo "[heimdal] disabled here. Use 'heimdal newfile/mkdir/annotate/export' instead." >&2; return 1 }
@@ -274,9 +291,20 @@ precmd_functions+=(_heimdal_prompt_prefix)
 export HEIMDAL=1
 export HEIMDAL_PREFIX=${HEIMDAL_PREFIX:-"[hd] "}
 export HEIMDAL_BIN=${HEIMDAL_BIN:-""}
-if [ -f "$HOME/.bashrc" ]; then
-  . "$HOME/.bashrc"
-fi
+RC_MODE=${HEIMDAL_RC_MODE:-project-then-os}
+PROJ_RC=${HEIMDAL_PROJECT_RC_BASH}
+case "$RC_MODE" in
+  project-only)
+    [ -f "$PROJ_RC" ] && . "$PROJ_RC" ;;
+  project-then-os)
+    [ -f "$PROJ_RC" ] && . "$PROJ_RC"
+    [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc" ;;
+  os-then-project)
+    [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+    [ -f "$PROJ_RC" ] && . "$PROJ_RC" ;;
+  *)
+    [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc" ;;
+esac
 # Ensure HEIMDAL_BIN is set (fallback to PATH lookup)
 if [ -z "$HEIMDAL_BIN" ]; then
   HEIMDAL_BIN=$(command -v heimdal 2>/dev/null)
@@ -287,6 +315,9 @@ wiki() { aioswiki "$@"; }
 # Project helpers
 project-init() { command "$HEIMDAL_BIN" project-init "$@"; }
 project-open() { command "$HEIMDAL_BIN" project-open "$@"; }
+if [ -n "$HEIMDAL_ENTRY_ECHO" ]; then
+  echo "$HEIMDAL_ENTRY_ECHO"
+fi
 ` + func() string { if restrictOps { return `
 # Restrict mutating commands inside project shell
 _heimdal_block(){ echo "[heimdal] disabled here. Use 'heimdal newfile/mkdir/annotate/export' instead." >&2; return 1; }
@@ -564,6 +595,9 @@ type ShellConfig struct {
     Shell          string `json:"shell"`
     VirtualPath    bool   `json:"virtual_path"`
     PromptTemplate string `json:"prompt_template"`
+    EntryEcho      string `json:"entry_echo"`
+    RcMode         string `json:"rc_mode"`
+    ProjectRcDir   string `json:"project_rc_dir"`
 }
 
 func loadShellConfig() ShellConfig {
@@ -662,8 +696,26 @@ func cmdProjectOpenWithPath(name, dbPath, prefix string) error {
         "HEIMDAL_USER": user,
         "HEIMDAL_HOST": host,
     }
+    // Project-specific rc
+    rcDir := cfg.ProjectRcDir
+    if rcDir == "" { rcDir = "~/.heimdall/projects/{name}/rc" }
+    rcDir = strings.ReplaceAll(rcDir, "{name}", name)
+    rcDir = expandPath(rcDir)
+    extra["HEIMDAL_RC_MODE"] = cfg.RcMode
+    extra["HEIMDAL_PROJECT_RC_ZSH"] = filepath.Join(rcDir, ".zshrc")
+    extra["HEIMDAL_PROJECT_RC_BASH"] = filepath.Join(rcDir, "bashrc")
     // Open shell in isolated fs root with restricted mutating commands
     return cmdShellWith(prefix, fsRoot, true, extra)
+}
+
+// expandPath expands leading ~ to user home and environment variables.
+func expandPath(p string) string {
+    if strings.HasPrefix(p, "~") {
+        if h, err := os.UserHomeDir(); err == nil {
+            p = filepath.Join(h, strings.TrimPrefix(p, "~"))
+        }
+    }
+    return os.ExpandEnv(p)
 }
 
 func cmdRunWithProject(project, dbPath, app string, rest []string, profile string) error {

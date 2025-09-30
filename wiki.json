@@ -24,6 +24,11 @@
       "title": "Projects (SQLite) in Heimdal AI:OS",
       "tags": ["projects", "sqlite", "aios", "setup"],
       "content": "Project lifecycle in Heimdal AI:OS.\n\nCreate: 'heimdal project-init NAME'.\nResult: creates NAME.sqlite on the host; inside Heimdal the AI:OS root is /NAME/.\nOpen: 'heimdal NAME shell' or 'heimdal project-open NAME'.\nRun apps: 'heimdal NAME <app> [args...]' (opens the universe for NAME and runs the app).\n\nExample structure:\n- host: ./NAME.sqlite (source of truth)\n- inside Heimdal ([hd] session): /NAME/ as AI:OS root with files/, cache/, context/.\n\nNotes:\n- The DB is the truth; exported files are projections.\n- Next steps: flatfiles, folders, and line annotations (//, @@, :: ::) recorded in SQLite for RAG and history."
+    },
+    {
+      "title": "Shell Configuration (AI:OS)",
+      "tags": ["shell", "zsh", "bash", "rc", "config"],
+      "content": "Heimdal reads shell configuration from shell.json (repo root) or ~/.heimdall/shell.json. Keys: shell (zsh|bash), rc_mode (project-only|project-then-os|os-then-project), project_rc_dir (supports {name} and ~), virtual_path (bool), prompt_template (use __VPATH__), entry_echo (message on entry).\n\nProject rc files are resolved under project_rc_dir: for zsh use .zshrc; for bash use bashrc. Example: ~/.heimdall/projects/NAME/rc/.zshrc or .../bashrc.\n\nrc_mode: project-only = only project rc; project-then-os = project rc then OS rc; os-then-project = OS rc then project rc.\n\nExample shell.json (pseudo): { 'shell': 'zsh', 'rc_mode': 'project-then-os', 'project_rc_dir': '~/.heimdall/projects/{name}/rc', 'virtual_path': true, 'prompt_template': '${USER}@${HOST} __VPATH__ $', 'entry_echo': 'zsh ai:os default' }. Use double quotes in real JSON."
     }
   ]
 }
