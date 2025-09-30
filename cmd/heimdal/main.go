@@ -120,6 +120,18 @@ func run(argv []string) error {
         return cmdFSNewFile(args[1:])
     case "ls":
         return cmdFSList(args[1:])
+    case "rm":
+        return cmdFSRemove(args[1:])
+    case "mv":
+        return cmdFSMove(args[1:])
+    case "cat":
+        return cmdFSCat(args[1:])
+    case "pwd":
+        return cmdFSPwd(args[1:])
+    case "append":
+        return cmdFSAppend(args[1:])
+    case "annotate":
+        return cmdFSAnnotate(args[1:])
     case "app":
         return cmdApp(args[1:])
     case "log":
@@ -1283,7 +1295,11 @@ func escapeSQL(s string) string { return strings.ReplaceAll(s, "'", "''") }
 // --- File/Dir commands (DB-backed) ---
 
 func cmdFSMakeDir(args []string) error {
-    if len(args) < 1 { return errors.New("usage: heimdal mkdir <path> [metadata]") }
+    if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+        fsMkdirUsage()
+        return nil
+    }
+    if len(args) < 1 { fsMkdirUsage(); return nil }
     db := os.Getenv("HEIMDAL_PROJECT_DB")
     if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
     path := args[0]
@@ -1309,7 +1325,11 @@ func cmdFSMakeDir(args []string) error {
 }
 
 func cmdFSNewFile(args []string) error {
-    if len(args) < 1 { return errors.New("usage: heimdal newfile <path> [metadata] [--content \"text\"]") }
+    if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+        fsNewfileUsage()
+        return nil
+    }
+    if len(args) < 1 { fsNewfileUsage(); return nil }
     db := os.Getenv("HEIMDAL_PROJECT_DB")
     if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
     // parse flags
@@ -1338,6 +1358,10 @@ func cmdFSNewFile(args []string) error {
 }
 
 func cmdFSList(args []string) error {
+    if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+        fsLsUsage()
+        return nil
+    }
     db := os.Getenv("HEIMDAL_PROJECT_DB")
     if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
     base := "."
@@ -1352,6 +1376,107 @@ func cmdFSList(args []string) error {
     if err != nil { return err }
     fmt.Print(out)
     return nil
+}
+
+func fsMkdirUsage() {
+    fmt.Println("mkdir — create DB-backed directory entries")
+    fmt.Println("Usage: heimdal mkdir <path/to/dir> [metadata]")
+    fmt.Println("Metadata: @@tag1,tag2   ::AICOM content::   // note")
+}
+
+func fsNewfileUsage() {
+    fmt.Println("newfile — create DB-backed flatfile")
+    fmt.Println("Usage: heimdal newfile <path/to/name.type> [metadata] [--content \"text\"]")
+    fmt.Println("Metadata: @@tag1,tag2   ::AICOM content::   // note")
+}
+
+func fsLsUsage() {
+    fmt.Println("ls — list directories/files from DB (not OS)")
+    fmt.Println("Usage: heimdal ls [path]")
+}
+
+func cmdFSAppend(args []string) error {
+    if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+        fmt.Println("append — append a new line to a flatfile")
+        fmt.Println("Usage: heimdal append <path/to/file> --text \"content\"")
+        return nil
+    }
+    db := os.Getenv("HEIMDAL_PROJECT_DB")
+    if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
+    // parse flags
+    text := ""
+    filtered := []string{}
+    for i := 0; i < len(args); i++ {
+        if args[i] == "--text" && i+1 < len(args) { text = args[i+1]; i++; continue }
+        filtered = append(filtered, args[i])
+    }
+    if len(filtered) < 1 || text == "" { fmt.Println("Usage: heimdal append <path> --text \"content\""); return nil }
+    path := strings.Trim(filtered[0], "/")
+    pid, err := currentProjectID(db)
+    if err != nil { return err }
+    fid, err := getFileID(db, pid, path)
+    if err != nil { return err }
+    // Insert next line
+    ins := fmt.Sprintf("INSERT INTO file_lines(file_id, lineno, content) SELECT %d, COALESCE(MAX(lineno)+1,1), '%s' FROM file_lines WHERE file_id=%d;", fid, escapeSQL(text), fid)
+    if _, err := runSQLiteExec(db, ins); err != nil { return err }
+    fmt.Println("ok")
+    return nil
+}
+
+func cmdFSAnnotate(args []string) error {
+    if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+        fmt.Println("annotate — set metadata on a specific line")
+        fmt.Println("Usage: heimdal annotate <path/to/file> --line N \"// note @@tag1,tag2 ::AICOM::\"")
+        return nil
+    }
+    db := os.Getenv("HEIMDAL_PROJECT_DB")
+    if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
+    // parse flags
+    var lineNumStr string
+    filtered := []string{}
+    for i := 0; i < len(args); i++ {
+        if args[i] == "--line" && i+1 < len(args) { lineNumStr = args[i+1]; i++; continue }
+        filtered = append(filtered, args[i])
+    }
+    if len(filtered) < 2 || lineNumStr == "" { fmt.Println("Usage: heimdal annotate <path> --line N \"// note @@tag ::aicom::\""); return nil }
+    path := strings.Trim(filtered[0], "/")
+    meta := strings.Join(filtered[1:], " ")
+    tags, note, aicom := parseMeta(meta)
+    pid, err := currentProjectID(db)
+    if err != nil { return err }
+    fid, err := getFileID(db, pid, path)
+    if err != nil { return err }
+    // ensure line exists
+    ins := fmt.Sprintf("INSERT OR IGNORE INTO file_lines(file_id, lineno, content) VALUES (%d, %s, '') ;", fid, lineNumStr)
+    if _, err := runSQLiteExec(db, ins); err != nil { return err }
+    // update
+    set := []string{}
+    if note != "" { set = append(set, fmt.Sprintf("side='%s'", escapeSQL(note))) }
+    if aicom != "" { set = append(set, fmt.Sprintf("aicom='%s'", escapeSQL(aicom))) }
+    if len(set) > 0 {
+        upd := fmt.Sprintf("UPDATE file_lines SET %s WHERE file_id=%d AND lineno=%s;", strings.Join(set, ","), fid, lineNumStr)
+        if _, err := runSQLiteExec(db, upd); err != nil { return err }
+    }
+    // file-level tags if provided
+    if len(tags) > 0 {
+        for _, t := range tags {
+            insTag := fmt.Sprintf("INSERT INTO file_tags(file_id, tag) VALUES (%d, '%s');", fid, escapeSQL(t))
+            if _, err := runSQLiteExec(db, insTag); err != nil { return err }
+        }
+    }
+    fmt.Println("ok")
+    return nil
+}
+
+func getFileID(dbPath string, pid int, path string) (int, error) {
+    q := fmt.Sprintf("SELECT id FROM files WHERE project_id=%d AND path='%s' AND type='file';", pid, escapeSQL(path))
+    out, err := runSQLiteQuery(dbPath, q)
+    if err != nil { return 0, err }
+    out = strings.TrimSpace(out)
+    if out == "" { return 0, fmt.Errorf("file not found in DB: %s", path) }
+    var id int
+    fmt.Sscanf(out, "%d", &id)
+    return id, nil
 }
 
 func parseMeta(s string) (tags []string, note, aicom string) {
