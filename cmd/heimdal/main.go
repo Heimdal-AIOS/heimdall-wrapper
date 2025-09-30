@@ -1,9 +1,11 @@
 package main
 
 import (
+    "archive/zip"
     "bytes"
     "errors"
     "fmt"
+    "io"
     "os"
     "os/exec"
     "path/filepath"
@@ -98,6 +100,20 @@ func run(argv []string) error {
         name := ""
         if len(args) >= 2 { name = args[1] }
         return cmdProjectInfo(name)
+    case "project-pack":
+        if os.Getenv("HEIMDAL_SESSION") != "" { return errors.New("run project-pack outside Heimdal shell") }
+        if len(args) < 2 { return errors.New("usage: heimdal project-pack <name> [-o output.zip]") }
+        name := args[1]
+        out := ""
+        for i:=2;i<len(args);i++{ if args[i]=="-o" && i+1<len(args){ out=args[i+1]; i++ } }
+        return cmdProjectPack(name, out)
+    case "project-unpack":
+        if os.Getenv("HEIMDAL_SESSION") != "" { return errors.New("run project-unpack outside Heimdal shell") }
+        if len(args) < 2 { return errors.New("usage: heimdal project-unpack <archive.zip> [--dest DIR]") }
+        archive := args[1]
+        dest := ""
+        for i:=2;i<len(args);i++{ if args[i]=="--dest" && i+1<len(args){ dest=args[i+1]; i++ } }
+        return cmdProjectUnpack(archive, dest)
     case "app":
         return cmdApp(args[1:])
     case "log":
@@ -150,6 +166,8 @@ func usage(prog string) {
     fmt.Printf("  %s project-init <name>\n", prog)
     fmt.Printf("  %s project-open <name>\n", prog)
     fmt.Printf("  %s project-info [name]\n", prog)
+    fmt.Printf("  %s project-pack <name> [-o output.zip]\n", prog)
+    fmt.Printf("  %s project-unpack <archive.zip> [--dest DIR]\n", prog)
     fmt.Printf("  %s aioswiki search <query>\n", prog)
     fmt.Printf("  %s aioswiki show <title>\n", prog)
     fmt.Printf("  %s aioswiki init\n", prog)
@@ -1078,6 +1096,96 @@ func projectBundleDirFromDB(dbPath string) string {
         return filepath.Dir(dbPath)
     }
     return ""
+}
+
+// --- Project pack/unpack (run outside Heimdal shell) ---
+func cmdProjectPack(name, out string) error {
+    // Find bundle dir
+    db, ok := resolveProject(name)
+    var dir string
+    if ok {
+        dir = projectBundleDirFromDB(db)
+        if dir == "" { return fmt.Errorf("project '%s' is legacy single-file; pack not supported yet", name) }
+    } else {
+        // try default locations
+        cwd, _ := os.Getwd()
+        d := filepath.Join(cwd, name+".aiosproj")
+        if st, err := os.Stat(d); err == nil && st.IsDir() { dir = d } else {
+            if h, err := os.UserHomeDir(); err == nil {
+                d = filepath.Join(h, ".heimdall", "projects", name+".aiosproj")
+                if st, err := os.Stat(d); err == nil && st.IsDir() { dir = d }
+            }
+        }
+        if dir == "" { return fmt.Errorf("project bundle not found for: %s", name) }
+    }
+    if out == "" {
+        out = name + ".aiosproj.zip"
+    }
+    return zipDir(dir, out)
+}
+
+func cmdProjectUnpack(archive, dest string) error {
+    if dest == "" {
+        if h, err := os.UserHomeDir(); err == nil {
+            dest = filepath.Join(h, ".heimdall", "projects")
+        } else {
+            cwd, _ := os.Getwd(); dest = cwd
+        }
+    }
+    if err := os.MkdirAll(dest, 0o755); err != nil { return err }
+    return unzipTo(archive, dest)
+}
+
+func zipDir(srcDir, dstZip string) error {
+    zf, err := os.Create(dstZip)
+    if err != nil { return err }
+    defer zf.Close()
+    zw := zip.NewWriter(zf)
+    defer zw.Close()
+    base := filepath.Dir(srcDir)
+    return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+        if err != nil { return err }
+        rel, _ := filepath.Rel(base, path)
+        if info.IsDir() {
+            if rel == "." { return nil }
+            _, err := zw.Create(rel + "/")
+            return err
+        }
+        fh, err := zip.FileInfoHeader(info)
+        if err != nil { return err }
+        fh.Name = rel
+        w, err := zw.CreateHeader(fh)
+        if err != nil { return err }
+        f, err := os.Open(path)
+        if err != nil { return err }
+        defer f.Close()
+        _, err = io.Copy(w, f)
+        return err
+    })
+}
+
+func unzipTo(zipPath, dest string) error {
+    r, err := zip.OpenReader(zipPath)
+    if err != nil { return err }
+    defer r.Close()
+    for _, f := range r.File {
+        fp := filepath.Join(dest, f.Name)
+        if !strings.HasPrefix(fp, filepath.Clean(dest)+string(os.PathSeparator)) {
+            return fmt.Errorf("illegal path in zip: %s", f.Name)
+        }
+        if f.FileInfo().IsDir() {
+            if err := os.MkdirAll(fp, 0o755); err != nil { return err }
+            continue
+        }
+        if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil { return err }
+        rc, err := f.Open()
+        if err != nil { return err }
+        w, err := os.OpenFile(fp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
+        if err != nil { rc.Close(); return err }
+        if _, err := io.Copy(w, rc); err != nil { w.Close(); rc.Close(); return err }
+        w.Close(); rc.Close()
+    }
+    return nil
 }
 
 // --- Project DB initialization using sqlite3 CLI (no Go driver dependency) ---
