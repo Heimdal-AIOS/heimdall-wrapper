@@ -265,9 +265,7 @@ function _heimdal_prompt_prefix() {
   fi
   if [[ "$HEIMDAL_VPATH" == "1" && -n "$HEIMDAL_VROOT" ]]; then
     local v=$(__heimdal_vpath)
-    # Colors with zsh prompt escapes
-    local BLUE='%F{blue}'; local YELLOW='%F{yellow}'; local RESET='%f'
-    PROMPT="${HEIMDAL_PREFIX}${BLUE}›${RESET} ${YELLOW}${v}${RESET} %(!.#.$) "
+    PROMPT="${HEIMDAL_PREFIX}${who}@${host} ${v} %(!.#.$) "
     return
   fi
   local p="${HEIMDAL_PREFIX}"
@@ -347,10 +345,7 @@ __heimdal_ps1() {
     return
   fi
   if [ "$HEIMDAL_VPATH" = "1" ] && [ -n "$HEIMDAL_VROOT" ]; then
-    v="$(__heimdal_vpath)";
-    # ANSI colors for bash prompt (wrap in \[\] for proper length calc)
-    BLUE='\[\e[34m\]'; YELLOW='\[\e[33m\]'; RESET='\[\e[0m\]'
-    PS1="${HEIMDAL_PREFIX}${BLUE}›${RESET} ${YELLOW}${v}${RESET} $ "; return
+    v="$(__heimdal_vpath)"; PS1="${HEIMDAL_PREFIX}${who}@${host} ${v} $ "; return
   fi
   case "$PS1" in
     ${HEIMDAL_PREFIX}*) ;;
