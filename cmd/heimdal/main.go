@@ -236,14 +236,24 @@ fi
 # Use a stable per-session path so all children inherit it reliably
 HEIMDAL_HELPER_DIR="${HEIMDAL_HELPER_DIR:-$HOME/.heimdall/sessions/$HEIMDAL_SESSION/bin}"
 mkdir -p "$HEIMDAL_HELPER_DIR"
-cat > "$HEIMDAL_HELPER_DIR/aioswiki" <<EOF
+cat > "$HEIMDAL_HELPER_DIR/aioswiki" <<'EOF'
 #!/bin/sh
-exec "$HEIMDAL_BIN" wiki "$@"
+BIN="${HEIMDAL_BIN:-$(command -v heimdal 2>/dev/null)}"
+if [ -z "$BIN" ]; then
+  echo "heimdal binary not found (set HEIMDAL_BIN or add to PATH)" >&2
+  exit 127
+fi
+exec "$BIN" wiki "$@"
 EOF
 chmod +x "$HEIMDAL_HELPER_DIR/aioswiki"
-cat > "$HEIMDAL_HELPER_DIR/wiki" <<EOF
+cat > "$HEIMDAL_HELPER_DIR/wiki" <<'EOF'
 #!/bin/sh
-exec "$HEIMDAL_BIN" wiki "$@"
+BIN="${HEIMDAL_BIN:-$(command -v heimdal 2>/dev/null)}"
+if [ -z "$BIN" ]; then
+  echo "heimdal binary not found (set HEIMDAL_BIN or add to PATH)" >&2
+  exit 127
+fi
+exec "$BIN" wiki "$@"
 EOF
 chmod +x "$HEIMDAL_HELPER_DIR/wiki"
 export PATH="$HEIMDAL_HELPER_DIR:$PATH"
@@ -343,14 +353,24 @@ if [ -n "$HEIMDAL_ENTRY_ECHO" ]; then
 fi
 HEIMDAL_HELPER_DIR="${HEIMDAL_HELPER_DIR:-$HOME/.heimdall/sessions/$HEIMDAL_SESSION/bin}"
 mkdir -p "$HEIMDAL_HELPER_DIR"
-cat > "$HEIMDAL_HELPER_DIR/aioswiki" <<EOF
+cat > "$HEIMDAL_HELPER_DIR/aioswiki" <<'EOF'
 #!/bin/sh
-exec "$HEIMDAL_BIN" wiki "$@"
+BIN="${HEIMDAL_BIN:-$(command -v heimdal 2>/dev/null)}"
+if [ -z "$BIN" ]; then
+  echo "heimdal binary not found (set HEIMDAL_BIN or add to PATH)" >&2
+  exit 127
+fi
+exec "$BIN" wiki "$@"
 EOF
 chmod +x "$HEIMDAL_HELPER_DIR/aioswiki"
-cat > "$HEIMDAL_HELPER_DIR/wiki" <<EOF
+cat > "$HEIMDAL_HELPER_DIR/wiki" <<'EOF'
 #!/bin/sh
-exec "$HEIMDAL_BIN" wiki "$@"
+BIN="${HEIMDAL_BIN:-$(command -v heimdal 2>/dev/null)}"
+if [ -z "$BIN" ]; then
+  echo "heimdal binary not found (set HEIMDAL_BIN or add to PATH)" >&2
+  exit 127
+fi
+exec "$BIN" wiki "$@"
 EOF
 chmod +x "$HEIMDAL_HELPER_DIR/wiki"
 export PATH="$HEIMDAL_HELPER_DIR:$PATH"
