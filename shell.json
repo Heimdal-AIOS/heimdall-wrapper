@@ -1,0 +1,6 @@
+{
+  "shell": "zsh",
+  "virtual_path": true,
+  "prompt_template": "${USER}@${HOST} __VPATH__ $"
+}
+

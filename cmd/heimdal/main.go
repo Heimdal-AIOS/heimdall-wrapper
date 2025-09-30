@@ -10,6 +10,7 @@ import (
     "runtime"
     "io/fs"
     "os/signal"
+    "encoding/json"
 
     "heimdal/internal/config"
     "heimdal/internal/manifest"
@@ -135,6 +136,7 @@ func usage(prog string) {
     fmt.Printf("  %s [--profile=permissive|restricted] [--prompt-prefix=\"[hd] \"] <app> [args...]  (shorthand)\n", prog)
     fmt.Println("\nEnv/Config:")
     fmt.Println("  Apps manifests in apps/<name>.yaml. Minimal YAML supported: name, cmd, args, env.")
+    fmt.Println("  Shell config: ./shell.json or ~/.heimdall/shell.json with keys: shell, virtual_path, prompt_template (use __VPATH__ token).")
 }
 
 func cmdShell(prefix string) error {
@@ -145,9 +147,17 @@ func cmdShell(prefix string) error {
 // If fsRoot is non-empty, the shell's working directory is set there and, when restrictOps is true,
 // common mutating commands are overridden to encourage Heimdal project commands.
 func cmdShellWith(prefix, fsRoot string, restrictOps bool, extraEnv map[string]string) error {
+    cfg := loadShellConfig()
     sh := os.Getenv("SHELL")
     if sh == "" {
         sh = "/bin/sh"
+    }
+    // If config specifies a shell, prefer it
+    switch cfg.Shell {
+    case "zsh":
+        if _, err := os.Stat("/bin/zsh"); err == nil { sh = "/bin/zsh" }
+    case "bash":
+        if _, err := os.Stat("/bin/bash"); err == nil { sh = "/bin/bash" }
     }
     base := filepath.Base(sh)
 
@@ -164,6 +174,17 @@ func cmdShellWith(prefix, fsRoot string, restrictOps bool, extraEnv map[string]s
     if exe, err := os.Executable(); err == nil {
         env["HEIMDAL_BIN"] = exe
     }
+    // Prompt config
+    if cfg.VirtualPath {
+        env["HEIMDAL_VPATH"] = "1"
+    }
+    if cfg.PromptTemplate != "" {
+        env["HEIMDAL_PROMPT_TMPL"] = cfg.PromptTemplate
+    }
+    user := os.Getenv("USER")
+    host, _ := os.Hostname()
+    env["HEIMDAL_USER"] = user
+    env["HEIMDAL_HOST"] = host
     for k, v := range extraEnv {
         env[k] = v
     }
@@ -203,7 +224,33 @@ alias rm=_heimdal_block
 alias cp=_heimdal_block
 alias touch=_heimdal_block
 ` } else { return "" } }() + `
+function __heimdal_vpath(){
+  local vr="$HEIMDAL_VROOT"
+  local p="$PWD"
+  if [[ -n "$vr" && "$p" == ${vr}* ]]; then
+    local rel="${p#$vr}"
+    if [[ -z "$rel" ]]; then echo "/"; else echo "/$rel"; fi
+  else
+    echo "$p"
+  fi
+}
 function _heimdal_prompt_prefix() {
+  local tmpl="${HEIMDAL_PROMPT_TMPL}"
+  local who="${HEIMDAL_USER}"; local host="${HEIMDAL_HOST}";
+  [[ -z "$who" ]] && who=$(whoami)
+  [[ -z "$host" ]] && host="%m"
+  if [[ -n "$tmpl" ]]; then
+    local v=""
+    if [[ "$HEIMDAL_VPATH" == "1" && -n "$HEIMDAL_VROOT" ]]; then v=$(__heimdal_vpath); fi
+    local rendered="${tmpl//__VPATH__/$v}"
+    PROMPT="${HEIMDAL_PREFIX}${rendered} "
+    return
+  fi
+  if [[ "$HEIMDAL_VPATH" == "1" && -n "$HEIMDAL_VROOT" ]]; then
+    local v=$(__heimdal_vpath)
+    PROMPT="${HEIMDAL_PREFIX}${who}@${host} ${v} %(!.#.$) "
+    return
+  fi
   local p="${HEIMDAL_PREFIX}"
   if [[ -n "$p" ]] && [[ "${PROMPT}" != ${p}* ]]; then
     PROMPT="${p}${PROMPT}"
@@ -249,7 +296,26 @@ alias rm=_heimdal_block
 alias cp=_heimdal_block
 alias touch=_heimdal_block
 ` } else { return "" } }() + `
+__heimdal_vpath(){
+  vr="$HEIMDAL_VROOT"; p="$PWD";
+  case "$p" in
+    "$vr"*) rel="${p#$vr}"; [ -z "$rel" ] && echo "/" || echo "/$rel" ;;
+    *) echo "$p" ;;
+  esac
+}
 __heimdal_ps1() {
+  tmpl="${HEIMDAL_PROMPT_TMPL}"; who="${HEIMDAL_USER}"; host="${HEIMDAL_HOST}";
+  [ -z "$who" ] && who="$(whoami)"
+  [ -z "$host" ] && host="$(hostname)"
+  if [ -n "$tmpl" ]; then
+    v=""; if [ "$HEIMDAL_VPATH" = "1" ] && [ -n "$HEIMDAL_VROOT" ]; then v="$(__heimdal_vpath)"; fi
+    rendered="${tmpl//__VPATH__/$v}"
+    PS1="${HEIMDAL_PREFIX}${rendered} "
+    return
+  fi
+  if [ "$HEIMDAL_VPATH" = "1" ] && [ -n "$HEIMDAL_VROOT" ]; then
+    v="$(__heimdal_vpath)"; PS1="${HEIMDAL_PREFIX}${who}@${host} ${v} $ "; return
+  fi
   case "$PS1" in
     ${HEIMDAL_PREFIX}*) ;;
     *) PS1="${HEIMDAL_PREFIX}${PS1}";;
@@ -493,6 +559,30 @@ func splitArgs(s string) []string {
     return parts
 }
 
+// ShellConfig holds optional shell customization.
+type ShellConfig struct {
+    Shell          string `json:"shell"`
+    VirtualPath    bool   `json:"virtual_path"`
+    PromptTemplate string `json:"prompt_template"`
+}
+
+func loadShellConfig() ShellConfig {
+    // Prefer repo-local shell.json, then ~/.heimdall/shell.json
+    var cfg ShellConfig
+    cwd, _ := os.Getwd()
+    paths := []string{filepath.Join(cwd, "shell.json")}
+    if h, err := os.UserHomeDir(); err == nil {
+        paths = append(paths, filepath.Join(h, ".heimdall", "shell.json"))
+    }
+    for _, p := range paths {
+        b, err := os.ReadFile(p)
+        if err != nil { continue }
+        _ = json.Unmarshal(b, &cfg)
+        break
+    }
+    return cfg
+}
+
 // --- Project support (MVP) ---
 
 // resolveProject tries to find a sqlite file for the given project name.
@@ -557,6 +647,9 @@ func cmdProjectOpenWithPath(name, dbPath, prefix string) error {
     sess, err := universe.StartSession(cwd)
     if err != nil { return err }
     fsRoot := filepath.Join(sess.Dir, "fs", name)
+    user := os.Getenv("USER")
+    host, _ := os.Hostname()
+    cfg := loadShellConfig()
     extra := map[string]string{
         "HEIMDAL_PROJECT_NAME": name,
         "HEIMDAL_PROJECT_DB": dbPath,
@@ -564,6 +657,10 @@ func cmdProjectOpenWithPath(name, dbPath, prefix string) error {
         "HEIMDAL_CONTEXT_DIR": sess.ContextDir,
         "HEIMDAL_WORKDIR": cwd,
         "HEIMDAL_UNIVERSE": "1",
+        "HEIMDAL_VROOT": fsRoot,
+        "HEIMDAL_VPATH": func() string { if cfg.VirtualPath { return "1" }; return "" }(),
+        "HEIMDAL_USER": user,
+        "HEIMDAL_HOST": host,
     }
     // Open shell in isolated fs root with restricted mutating commands
     return cmdShellWith(prefix, fsRoot, true, extra)
