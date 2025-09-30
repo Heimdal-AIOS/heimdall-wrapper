@@ -12,6 +12,7 @@ import (
     "io/fs"
     "os/signal"
     "encoding/json"
+    "time"
 
     "heimdal/internal/config"
     "heimdal/internal/fuzzy"
@@ -844,56 +845,82 @@ func loadShellConfig() ShellConfig {
 // It looks in CWD as ./NAME.sqlite, then in ~/.heimdall/projects/NAME.sqlite.
 func resolveProject(name string) (string, bool) {
     if name == "" { return "", false }
-    // CWD
+    // CWD bundle
     cwd, _ := os.Getwd()
-    p := filepath.Join(cwd, name+".sqlite")
-    if st, err := os.Stat(p); err == nil && !st.IsDir() {
-        return p, true
+    bundle := filepath.Join(cwd, name+".aiosproj")
+    if st, err := os.Stat(bundle); err == nil && st.IsDir() {
+        db := filepath.Join(bundle, "project.sqlite")
+        if st2, err2 := os.Stat(db); err2 == nil && !st2.IsDir() { return db, true }
     }
+    // CWD legacy
+    p := filepath.Join(cwd, name+".sqlite")
+    if st, err := os.Stat(p); err == nil && !st.IsDir() { return p, true }
     // Home dir fallback
     if h, err := os.UserHomeDir(); err == nil {
-        p = filepath.Join(h, ".heimdall", "projects", name+".sqlite")
-        if st, err := os.Stat(p); err == nil && !st.IsDir() {
-            return p, true
+        bundle = filepath.Join(h, ".heimdall", "projects", name+".aiosproj")
+        if st, err := os.Stat(bundle); err == nil && st.IsDir() {
+            db := filepath.Join(bundle, "project.sqlite")
+            if st2, err2 := os.Stat(db); err2 == nil && !st2.IsDir() { return db, true }
         }
+        p = filepath.Join(h, ".heimdall", "projects", name+".sqlite")
+        if st, err := os.Stat(p); err == nil && !st.IsDir() { return p, true }
     }
     return "", false
 }
 
-func ensureProjectPath(name string) (string, error) {
+func ensureProjectBundle(name string) (dbPath, bundleDir string, err error) {
     // Prefer CWD
     cwd, _ := os.Getwd()
-    p := filepath.Join(cwd, name+".sqlite")
-    if err := os.WriteFile(p, []byte{}, 0o644); err == nil {
-        return p, nil
+    dir := filepath.Join(cwd, name+".aiosproj")
+    if err2 := os.MkdirAll(dir, 0o755); err2 == nil {
+        db := filepath.Join(dir, "project.sqlite")
+        if err3 := touchFile(db); err3 == nil {
+            _ = os.MkdirAll(filepath.Join(dir, "rc"), 0o755)
+            _ = writeMeta(filepath.Join(dir, "meta.json"), name)
+            return db, dir, nil
+        }
     }
     // Fallback to ~/.heimdall/projects
     h, err := os.UserHomeDir()
-    if err != nil { return "", err }
-    dir := filepath.Join(h, ".heimdall", "projects")
-    if err := os.MkdirAll(dir, 0o755); err != nil { return "", err }
-    p = filepath.Join(dir, name+".sqlite")
-    if err := os.WriteFile(p, []byte{}, 0o644); err != nil { return "", err }
-    return p, nil
+    if err != nil { return "", "", err }
+    root := filepath.Join(h, ".heimdall", "projects", name+".aiosproj")
+    if err := os.MkdirAll(root, 0o755); err != nil { return "", "", err }
+    db := filepath.Join(root, "project.sqlite")
+    if err := touchFile(db); err != nil { return "", "", err }
+    _ = os.MkdirAll(filepath.Join(root, "rc"), 0o755)
+    _ = writeMeta(filepath.Join(root, "meta.json"), name)
+    return db, root, nil
+}
+
+func touchFile(p string) error {
+    if _, err := os.Stat(p); err == nil { return nil }
+    return os.WriteFile(p, []byte{}, 0o644)
+}
+
+func writeMeta(path, name string) error {
+    meta := fmt.Sprintf("{\n  \"name\": \"%s\",\n  \"created_at\": \"%s\",\n  \"version\": 1\n}\n", name, time.Now().Format(time.RFC3339))
+    return os.WriteFile(path, []byte(meta), 0o644)
 }
 
 func cmdProjectInit(name string) error {
     if _, ok := resolveProject(name); ok {
         return fmt.Errorf("project already exists: %s", name)
     }
-    p, err := ensureProjectPath(name)
+    p, bundle, err := ensureProjectBundle(name)
     if err != nil { return err }
     // Try to initialize DB schema via sqlite3 CLI if available
     if err := initProjectDB(p); err != nil {
         // Graceful: write .sql next to DB and inform the user
         sqlPath := p + ".init.sql"
         _ = os.WriteFile(sqlPath, []byte(projectInitSQL(filepath.Dir(p))), 0o644)
-        fmt.Println("created:", p)
+        fmt.Println("created bundle:", bundle)
+        fmt.Println("db:", p)
         fmt.Println("note: sqlite3 not found or init failed. Run manually:")
         fmt.Printf("  sqlite3 %s < %s\n", p, sqlPath)
         return nil
     }
-    fmt.Println("created and initialized:", p)
+    fmt.Println("created and initialized bundle:", bundle)
+    fmt.Println("db:", p)
     return nil
 }
 
@@ -915,9 +942,11 @@ func cmdProjectOpenWithPath(name, dbPath, prefix string) error {
     user := os.Getenv("USER")
     host, _ := os.Hostname()
     cfg := loadShellConfig()
+    projDir := projectBundleDirFromDB(dbPath)
     extra := map[string]string{
         "HEIMDAL_PROJECT_NAME": name,
         "HEIMDAL_PROJECT_DB": dbPath,
+        "HEIMDAL_PROJECT_DIR": projDir,
         "HEIMDAL_SESSION": sess.ID,
         "HEIMDAL_CONTEXT_DIR": sess.ContextDir,
         "HEIMDAL_WORKDIR": cwd,
@@ -929,9 +958,18 @@ func cmdProjectOpenWithPath(name, dbPath, prefix string) error {
     }
     // Project-specific rc
     rcDir := cfg.ProjectRcDir
-    if rcDir == "" { rcDir = "~/.heimdall/projects/{name}/rc" }
-    rcDir = strings.ReplaceAll(rcDir, "{name}", name)
-    rcDir = expandPath(rcDir)
+    if rcDir == "" {
+        if projDir != "" {
+            rcDir = filepath.Join(projDir, "rc")
+        } else {
+            rcDir = "~/.heimdall/projects/{name}/rc"
+            rcDir = strings.ReplaceAll(rcDir, "{name}", name)
+            rcDir = expandPath(rcDir)
+        }
+    } else {
+        rcDir = strings.ReplaceAll(rcDir, "{name}", name)
+        rcDir = expandPath(rcDir)
+    }
     extra["HEIMDAL_RC_MODE"] = cfg.RcMode
     extra["HEIMDAL_PROJECT_RC_ZSH"] = filepath.Join(rcDir, ".zshrc")
     extra["HEIMDAL_PROJECT_RC_BASH"] = filepath.Join(rcDir, "bashrc")
@@ -999,14 +1037,23 @@ func cmdProjectInfo(name string) error {
     if name == "" {
         // List known (best-effort): scan CWD and ~/.heimdall/projects
         cwd, _ := os.Getwd()
-        glob, _ := filepath.Glob(filepath.Join(cwd, "*.sqlite"))
-        for _, p := range glob {
-            fmt.Printf("- %s\n", filepath.Base(p))
+        if ents, err := os.ReadDir(cwd); err == nil {
+            for _, e := range ents {
+                if e.IsDir() && strings.HasSuffix(e.Name(), ".aiosproj") {
+                    fmt.Printf("- %s\n", e.Name())
+                }
+            }
+        }
+        if glob, _ := filepath.Glob(filepath.Join(cwd, "*.sqlite")); len(glob) > 0 {
+            for _, p := range glob { fmt.Printf("- %s\n", filepath.Base(p)) }
         }
         if h, err := os.UserHomeDir(); err == nil {
             dir := filepath.Join(h, ".heimdall", "projects")
             if ents, err := os.ReadDir(dir); err == nil {
                 for _, e := range ents {
+                    if e.IsDir() && strings.HasSuffix(e.Name(), ".aiosproj") {
+                        fmt.Printf("- %s\n", e.Name())
+                    }
                     if !e.IsDir() && strings.HasSuffix(e.Name(), ".sqlite") {
                         fmt.Printf("- %s\n", e.Name())
                     }
@@ -1016,10 +1063,21 @@ func cmdProjectInfo(name string) error {
         return nil
     }
     if p, ok := resolveProject(name); ok {
-        fmt.Printf("project: %s\npath: %s\n", name, p)
+        fmt.Printf("project: %s\n", name)
+        if d := projectBundleDirFromDB(p); d != "" {
+            fmt.Printf("dir: %s\n", d)
+        }
+        fmt.Printf("db: %s\n", p)
         return nil
     }
     return fmt.Errorf("project not found: %s", name)
+}
+
+func projectBundleDirFromDB(dbPath string) string {
+    if strings.HasSuffix(dbPath, string(os.PathSeparator)+"project.sqlite") {
+        return filepath.Dir(dbPath)
+    }
+    return ""
 }
 
 // --- Project DB initialization using sqlite3 CLI (no Go driver dependency) ---
