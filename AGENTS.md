@@ -40,3 +40,20 @@
 ## Agent‑Specific Notes
 - Follow this file and any nested `AGENTS.md` files; deeper files take precedence.
 - Keep changes minimal, scoped, and consistent with existing patterns. Prefer small PRs.
+
+## Agent Working Preferences (Heimdal AI:OS)
+- File size targets (Go): keep files 150–500 lines; split when >700. Keep `main.go` under ~300–400 lines (entry/dispatch only).
+- Function size targets: 10–40 lines is ideal; avoid exceeding 80–120 unless truly cohesive. Prefer extracting helpers over long functions.
+- Module layout (cmd/heimdal):
+  - `entry.go` (main/run/usage),
+  - `shell_shim.go` (zsh/bash shims, guards),
+  - `project.go` (init/open/info/pack/unpack + DB init),
+  - `fs_cmd.go` (mkdir/newfile/ls/append/annotate/rm/mv/cat/pwd),
+  - `wiki_cmd.go` (aioswiki commands),
+  - `instructions.go` (instructions/suggest),
+  - `helpers.go` (shared small utils).
+- Separation of concerns: keep shell, project, FS, wiki, and instructions logic in their own files; avoid cross‑coupling.
+- CLI UX: every command supports `-h|--help|help`; prefer concise, single‑screen help text with one example.
+- Security/Guidance: do not expose raw paths to Heimdal support files; route all wiki access via `aioswiki`.
+- Config precedence: repo config (e.g., `shell.json`, `fuzzy-commands.json`) can be overridden by `~/.heimdall/*` when explicitly intended; document any overrides.
+- Refactors: behaviour‑neutral, incremental splits with a passing `make build`. Keep diffs focused and reviewable.
