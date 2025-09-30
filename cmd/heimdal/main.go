@@ -9,6 +9,7 @@ import (
     "os"
     "os/exec"
     "path/filepath"
+    "regexp"
     "strings"
     "runtime"
     "io/fs"
@@ -142,6 +143,10 @@ func run(argv []string) error {
         return cmdWiki(args[1:])
     case "config":
         return cmdConfig(args[1:])
+    case "instructions":
+        return cmdInstructions(args[1:])
+    case "suggest":
+        return cmdSuggest(args[1:])
     default:
         // Try to interpret first token as a project
         first := args[0]
@@ -188,6 +193,8 @@ func usage(prog string) {
         fmt.Printf("  %s run <app> [args...]\n", prog)
         fmt.Printf("  %s shell\n", prog)
         fmt.Printf("  %s config fuzzy show|reload\n", prog)
+        fmt.Printf("  %s instructions\n", prog)
+        fmt.Printf("  %s suggest \"freeform command\"\n", prog)
     } else {
         fmt.Println("Inside Heimdal ([hd] prompt):")
         fmt.Println("  aioswiki search <q> | show <title> | init | path")
@@ -195,6 +202,7 @@ func usage(prog string) {
         fmt.Println("  app add|ls|rm ...  | run <app> [args...]")
         fmt.Printf("  %s [--profile=permissive|restricted] [--prompt-prefix=\"[hd] \"] <app> [args...]\n", prog)
         fmt.Println("  config fuzzy show|reload")
+        fmt.Println("  instructions | suggest \"freeform\"")
         fmt.Println()
         fmt.Println("Note: project-pack/unpack must be run outside Heimdal.")
     }
@@ -1012,6 +1020,8 @@ func cmdProjectOpenWithPath(name, dbPath, prefix string) error {
     extra["HEIMDAL_RC_MODE"] = cfg.RcMode
     extra["HEIMDAL_PROJECT_RC_ZSH"] = filepath.Join(rcDir, ".zshrc")
     extra["HEIMDAL_PROJECT_RC_BASH"] = filepath.Join(rcDir, "bashrc")
+    // Write instructions file into context dir for AI tools
+    _ = os.WriteFile(filepath.Join(sess.ContextDir, "heimdal_instructions.txt"), []byte(buildInstructions()), 0o644)
     // Open shell in isolated fs root with restricted mutating commands
     return cmdShellWith(prefix, fsRoot, true, extra)
 }
@@ -1059,6 +1069,8 @@ func cmdRunWithProject(project, dbPath, app string, rest []string, profile strin
     envMap["HEIMDAL_WORKDIR"] = cwd
     envMap["HEIMDAL_PROJECT_NAME"] = project
     envMap["HEIMDAL_PROJECT_DB"] = dbPath
+    // Write instructions into session context for AI tools
+    _ = os.WriteFile(filepath.Join(sess.ContextDir, "heimdal_instructions.txt"), []byte(buildInstructions()), 0o644)
     for k, v := range m.Env { envMap[k] = os.ExpandEnv(v) }
     envList := make([]string, 0, len(envMap))
     for k, v := range envMap { envList = append(envList, k+"="+v) }
