@@ -114,6 +114,12 @@ func run(argv []string) error {
         dest := ""
         for i:=2;i<len(args);i++{ if args[i]=="--dest" && i+1<len(args){ dest=args[i+1]; i++ } }
         return cmdProjectUnpack(archive, dest)
+    case "mkdir":
+        return cmdFSMakeDir(args[1:])
+    case "newfile":
+        return cmdFSNewFile(args[1:])
+    case "ls":
+        return cmdFSList(args[1:])
     case "app":
         return cmdApp(args[1:])
     case "log":
@@ -1237,7 +1243,213 @@ CREATE TABLE IF NOT EXISTS runs (
   exit_code INTEGER,
   FOREIGN KEY(session_id) REFERENCES sessions(id)
 );
+
+-- Files/Flatfiles schema (MVP)
+CREATE TABLE IF NOT EXISTS files (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,               -- 'dir'|'file'
+  note TEXT,
+  aicom TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(project_id, path),
+  FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+
+CREATE TABLE IF NOT EXISTS file_tags (
+  id INTEGER PRIMARY KEY,
+  file_id INTEGER NOT NULL,
+  tag TEXT NOT NULL,
+  FOREIGN KEY(file_id) REFERENCES files(id)
+);
+
+CREATE TABLE IF NOT EXISTS file_lines (
+  id INTEGER PRIMARY KEY,
+  file_id INTEGER NOT NULL,
+  lineno INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  side TEXT,
+  aicom TEXT,
+  UNIQUE(file_id, lineno),
+  FOREIGN KEY(file_id) REFERENCES files(id)
+);
 COMMIT;`, escapeSQL(projectRoot))
 }
 
 func escapeSQL(s string) string { return strings.ReplaceAll(s, "'", "''") }
+
+// --- File/Dir commands (DB-backed) ---
+
+func cmdFSMakeDir(args []string) error {
+    if len(args) < 1 { return errors.New("usage: heimdal mkdir <path> [metadata]") }
+    db := os.Getenv("HEIMDAL_PROJECT_DB")
+    if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
+    path := args[0]
+    meta := strings.Join(args[1:], " ")
+    tags, note, aicom := parseMeta(meta)
+    root := projectBundleDirFromDB(db)
+    projRoot := root
+    if projRoot == "" { projRoot, _ = os.Getwd() }
+    // Ensure project exists and get id
+    pid, err := ensureProjectRow(db, projRoot)
+    if err != nil { return err }
+    // Create each path component as dir; apply meta only to final
+    comps := strings.Split(strings.Trim(path, "/"), "/")
+    cur := ""
+    for i, c := range comps {
+        if c == "" { continue }
+        if cur == "" { cur = c } else { cur = cur + "/" + c }
+        name := c
+        if err := upsertDir(db, pid, cur, name, i == len(comps)-1, tags, note, aicom); err != nil { return err }
+    }
+    fmt.Println("ok")
+    return nil
+}
+
+func cmdFSNewFile(args []string) error {
+    if len(args) < 1 { return errors.New("usage: heimdal newfile <path> [metadata] [--content \"text\"]") }
+    db := os.Getenv("HEIMDAL_PROJECT_DB")
+    if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
+    // parse flags
+    content := ""
+    filtered := []string{}
+    for i := 0; i < len(args); i++ {
+        if args[i] == "--content" && i+1 < len(args) { content = args[i+1]; i++; continue }
+        filtered = append(filtered, args[i])
+    }
+    path := filtered[0]
+    meta := strings.Join(filtered[1:], " ")
+    tags, note, aicom := parseMeta(meta)
+    root := projectBundleDirFromDB(db)
+    projRoot := root
+    if projRoot == "" { projRoot, _ = os.Getwd() }
+    pid, err := ensureProjectRow(db, projRoot)
+    if err != nil { return err }
+    // Ensure parent dirs
+    if dir := filepath.Dir(path); dir != "." && dir != "" {
+        _ = cmdFSMakeDir([]string{dir})
+    }
+    name := filepath.Base(path)
+    if err := upsertFile(db, pid, path, name, tags, note, aicom, content); err != nil { return err }
+    fmt.Println("ok")
+    return nil
+}
+
+func cmdFSList(args []string) error {
+    db := os.Getenv("HEIMDAL_PROJECT_DB")
+    if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
+    base := "."
+    if len(args) > 0 { base = args[0] }
+    pid, err := currentProjectID(db)
+    if err != nil { return err }
+    // List immediate children
+    like := escapeSQL(strings.Trim(base, "/"))
+    if like == "." || like == "" { like = "" } else { like = like + "/" }
+    sql := fmt.Sprintf("SELECT path,name,type FROM files WHERE project_id=%d AND (path LIKE '%s%%' OR path='%s') ORDER BY path;", pid, like, like)
+    out, err := runSQLiteQuery(db, sql)
+    if err != nil { return err }
+    fmt.Print(out)
+    return nil
+}
+
+func parseMeta(s string) (tags []string, note, aicom string) {
+    s = strings.TrimSpace(s)
+    if s == "" { return nil, "", "" }
+    // very simple parses: // note, @@tag1,tag2, ::...:: or ::NAME: Text:
+    // split by spaces, but consume tokens
+    for s != "" {
+        if strings.HasPrefix(s, "//") {
+            note = strings.TrimSpace(strings.TrimPrefix(s, "//"))
+            break
+        }
+        if strings.HasPrefix(s, "@@") {
+            t := strings.TrimSpace(strings.TrimPrefix(s, "@@"))
+            for _, p := range strings.Split(t, ",") {
+                p = strings.TrimSpace(p); if p!="" { tags = append(tags, p) }
+            }
+            break
+        }
+        if strings.HasPrefix(s, "::") {
+            // take everything between :: and :: if present, else rest
+            body := strings.TrimPrefix(s, "::")
+            if i := strings.LastIndex(body, "::"); i >= 0 { body = body[:i] }
+            aicom = strings.TrimSpace(body)
+            break
+        }
+        // nothing recognized
+        break
+    }
+    return
+}
+
+func ensureProjectRow(dbPath, root string) (int, error) {
+    sql := fmt.Sprintf("INSERT OR IGNORE INTO projects(root, created_at) VALUES ('%s', datetime('now'));", escapeSQL(root))
+    if _, err := runSQLiteExec(dbPath, sql); err != nil { return 0, err }
+    idSQL := fmt.Sprintf("SELECT id FROM projects WHERE root='%s';", escapeSQL(root))
+    out, err := runSQLiteQuery(dbPath, idSQL)
+    if err != nil { return 0, err }
+    out = strings.TrimSpace(out)
+    if out == "" { return 0, errors.New("failed to resolve project id") }
+    // parse int
+    var id int
+    fmt.Sscanf(out, "%d", &id)
+    return id, nil
+}
+
+func currentProjectID(dbPath string) (int, error) {
+    root := projectBundleDirFromDB(dbPath)
+    if root == "" { root, _ = os.Getwd() }
+    return ensureProjectRow(dbPath, root)
+}
+
+func upsertDir(dbPath string, pid int, path, name string, applyMeta bool, tags []string, note, aicom string) error {
+    sql := fmt.Sprintf("INSERT OR IGNORE INTO files(project_id,path,name,type,created_at) VALUES (%d,'%s','%s','dir',datetime('now'));", pid, escapeSQL(strings.Trim(path, "/")), escapeSQL(name))
+    if _, err := runSQLiteExec(dbPath, sql); err != nil { return err }
+    if applyMeta {
+        if note != "" || aicom != "" {
+            upd := fmt.Sprintf("UPDATE files SET note=COALESCE(note,'' )||'%s', aicom=COALESCE(aicom,'')||'%s' WHERE project_id=%d AND path='%s';", escapeSQL(note), escapeSQL("\n"+aicom), pid, escapeSQL(strings.Trim(path, "/")))
+            if _, err := runSQLiteExec(dbPath, upd); err != nil { return err }
+        }
+        if len(tags) > 0 {
+            for _, t := range tags {
+                ins := fmt.Sprintf("INSERT INTO file_tags(file_id, tag) SELECT id, '%s' FROM files WHERE project_id=%d AND path='%s';", escapeSQL(t), pid, escapeSQL(strings.Trim(path, "/")))
+                if _, err := runSQLiteExec(dbPath, ins); err != nil { return err }
+            }
+        }
+    }
+    return nil
+}
+
+func upsertFile(dbPath string, pid int, path, name string, tags []string, note, aicom, content string) error {
+    p := strings.Trim(path, "/")
+    sql := fmt.Sprintf("INSERT OR IGNORE INTO files(project_id,path,name,type,note,aicom,created_at) VALUES (%d,'%s','%s','file','%s','%s',datetime('now'));", pid, escapeSQL(p), escapeSQL(name), escapeSQL(note), escapeSQL(aicom))
+    if _, err := runSQLiteExec(dbPath, sql); err != nil { return err }
+    if len(tags) > 0 {
+        for _, t := range tags {
+            ins := fmt.Sprintf("INSERT INTO file_tags(file_id, tag) SELECT id, '%s' FROM files WHERE project_id=%d AND path='%s';", escapeSQL(t), pid, escapeSQL(p))
+            if _, err := runSQLiteExec(dbPath, ins); err != nil { return err }
+        }
+    }
+    if content != "" {
+        ins := fmt.Sprintf("INSERT INTO file_lines(file_id, lineno, content) SELECT id, 1, '%s' FROM files WHERE project_id=%d AND path='%s';", escapeSQL(content), pid, escapeSQL(p))
+        if _, err := runSQLiteExec(dbPath, ins); err != nil { return err }
+    }
+    return nil
+}
+
+func runSQLiteExec(dbPath, sql string) (string, error) {
+    if _, err := exec.LookPath("sqlite3"); err != nil { return "", errors.New("sqlite3 CLI not found") }
+    cmd := exec.Command("sqlite3", dbPath)
+    cmd.Stdin = bytes.NewBufferString(sql)
+    b, err := cmd.CombinedOutput()
+    return string(b), err
+}
+
+func runSQLiteQuery(dbPath, sql string) (string, error) {
+    if _, err := exec.LookPath("sqlite3"); err != nil { return "", errors.New("sqlite3 CLI not found") }
+    cmd := exec.Command("sqlite3", dbPath, sql)
+    b, err := cmd.CombinedOutput()
+    return string(b), err
+}
