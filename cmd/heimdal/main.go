@@ -360,6 +360,14 @@ function __heimdal_guard_cat(){
       echo "[heimdal] Direct wiki.json access is disabled. Use 'aioswiki ...' instead." >&2
       return 1
     fi
+    if [[ -n "$HEIMDAL_CONTEXT_DIR" && "$a" == $HEIMDAL_CONTEXT_DIR* ]]; then
+      echo "[heimdal] Direct access to Heimdal context files is disabled." >&2
+      return 1
+    fi
+    if [[ "$a" == *"/.heimdall/"* ]]; then
+      echo "[heimdal] Direct access to Heimdal support files is disabled." >&2
+      return 1
+    fi
   done
   command cat "$@"
 }
@@ -368,6 +376,14 @@ function __heimdal_guard_less(){
   for a in "${args[@]}"; do
     if [[ "$a" == */wiki.json || "$a" == wiki.json ]]; then
       echo "[heimdal] Direct wiki.json access is disabled. Use 'aioswiki ...' instead." >&2
+      return 1
+    fi
+    if [[ -n "$HEIMDAL_CONTEXT_DIR" && "$a" == $HEIMDAL_CONTEXT_DIR* ]]; then
+      echo "[heimdal] Direct access to Heimdal context files is disabled." >&2
+      return 1
+    fi
+    if [[ "$a" == *"/.heimdall/"* ]]; then
+      echo "[heimdal] Direct access to Heimdal support files is disabled." >&2
       return 1
     fi
   done
@@ -513,6 +529,10 @@ __heimdal_guard_cat(){
       */wiki.json|wiki.json)
         echo "[heimdal] Direct wiki.json access is disabled. Use 'aioswiki ...' instead." >&2
         return 1 ;;
+      "$HEIMDAL_CONTEXT_DIR"*|
+      *"/.heimdall/"*)
+         echo "[heimdal] Direct access to Heimdal support/context files is disabled." >&2
+         return 1 ;;
     esac
   done
   command cat "$@"
@@ -523,6 +543,10 @@ __heimdal_guard_less(){
       */wiki.json|wiki.json)
         echo "[heimdal] Direct wiki.json access is disabled. Use 'aioswiki ...' instead." >&2
         return 1 ;;
+      "$HEIMDAL_CONTEXT_DIR"*|
+      *"/.heimdall/"*)
+         echo "[heimdal] Direct access to Heimdal support/context files is disabled." >&2
+         return 1 ;;
     esac
   done
   command less "$@"
@@ -767,7 +791,8 @@ func cmdWiki(args []string) error {
         fmt.Println("initialized wiki at:", path)
         return nil
     case "path":
-        fmt.Println(path)
+        // Do not disclose actual path; steer usage via aioswiki commands
+        fmt.Println("[aioswiki] path is managed by Heimdal")
         return nil
     case "search":
         if len(args) < 2 { return errors.New("usage: heimdal wiki search <query>") }
@@ -817,18 +842,14 @@ func wikiShow(path, title string) error {
 
 func wikiUsage() {
     // Attempt to show where wiki.json would be located for context
-    wd := os.Getenv("HEIMDAL_WORKDIR")
-    if wd == "" { wd, _ = os.Getwd() }
-    p, _ := wikimod.Locate(wd)
     fmt.Println("aioswiki — Heimdal Wiki (RAG manpages)")
     fmt.Println()
     fmt.Println("Usage:")
     fmt.Println("  aioswiki search <query>")
     fmt.Println("  aioswiki show <title>")
     fmt.Println("  aioswiki init")
-    fmt.Println("  aioswiki path")
+    fmt.Println("  aioswiki path   (hidden)")
     fmt.Println()
-    if p != "" { fmt.Println("wiki.json path:", p) }
 }
 
 func fileExists(p string) bool {
