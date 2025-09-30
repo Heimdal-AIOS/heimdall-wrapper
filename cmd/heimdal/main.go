@@ -265,6 +265,12 @@ function __heimdal_vpath(){
     echo "$p"
   fi
 }
+function __heimdal_write_vpath(){
+  local f="$HEIMDAL_VPATH_FILE"
+  if [[ -n "$f" ]]; then
+    __heimdal_vpath >| "$f" 2>/dev/null
+  fi
+}
 function _heimdal_prompt_prefix() {
   local tmpl="${HEIMDAL_PROMPT_TMPL}"
   local who="${HEIMDAL_USER}"; local host="${HEIMDAL_HOST}";
@@ -288,6 +294,8 @@ function _heimdal_prompt_prefix() {
   fi
 }
 precmd_functions+=(_heimdal_prompt_prefix)
+chpwd_functions+=(__heimdal_write_vpath)
+__heimdal_write_vpath
 `
         if err := os.WriteFile(filepath.Join(tmpDir, ".zshrc"), []byte(shim), fs.FileMode(0644)); err != nil {
             return err
@@ -361,6 +369,9 @@ __heimdal_vpath(){
     *) echo "$p" ;;
   esac
 }
+__heimdal_write_vpath(){
+  f="$HEIMDAL_VPATH_FILE"; [ -n "$f" ] && __heimdal_vpath > "$f" 2>/dev/null || true
+}
 __heimdal_ps1() {
   tmpl="${HEIMDAL_PROMPT_TMPL}"; who="${HEIMDAL_USER}"; host="${HEIMDAL_HOST}";
   [ -z "$who" ] && who="$(whoami)"
@@ -379,7 +390,7 @@ __heimdal_ps1() {
     *) PS1="${HEIMDAL_PREFIX}${PS1}";;
   esac
 }
-PROMPT_COMMAND="__heimdal_ps1; ${PROMPT_COMMAND}"
+PROMPT_COMMAND="__heimdal_ps1; __heimdal_write_vpath; ${PROMPT_COMMAND}"
 `
         if err := os.WriteFile(tmpPath, []byte(shim), fs.FileMode(0644)); err != nil { return err }
         cmd = exec.Command(sh, "--rcfile", tmpPath, "-i")
