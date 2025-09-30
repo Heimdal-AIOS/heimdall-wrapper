@@ -301,6 +301,7 @@ function wiki() { aioswiki "$@" }
 # Project helpers
 function project-init() { command "$HEIMDAL_BIN" project-init "$@" }
 function project-open() { command "$HEIMDAL_BIN" project-open "$@" }
+function heimdal() { command "$HEIMDAL_BIN" "$@" }
 if [[ -n "$HEIMDAL_ENTRY_ECHO" ]]; then
   echo "$HEIMDAL_ENTRY_ECHO"
 fi
@@ -482,6 +483,7 @@ wiki() { aioswiki "$@"; }
 # Project helpers
 project-init() { command "$HEIMDAL_BIN" project-init "$@"; }
 project-open() { command "$HEIMDAL_BIN" project-open "$@"; }
+heimdal() { command "$HEIMDAL_BIN" "$@"; }
 if [ -n "$HEIMDAL_ENTRY_ECHO" ]; then
   echo "$HEIMDAL_ENTRY_ECHO"
 fi
