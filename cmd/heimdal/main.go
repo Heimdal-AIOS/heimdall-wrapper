@@ -233,7 +233,8 @@ if [[ -n "$HEIMDAL_ENTRY_ECHO" ]]; then
   echo "$HEIMDAL_ENTRY_ECHO"
 fi
 # Helper scripts so child processes can call 'aioswiki' directly
-HEIMDAL_HELPER_DIR="$ZDOTDIR/.bin"
+# Use a stable per-session path so all children inherit it reliably
+HEIMDAL_HELPER_DIR="${HEIMDAL_HELPER_DIR:-$HOME/.heimdall/sessions/$HEIMDAL_SESSION/bin}"
 mkdir -p "$HEIMDAL_HELPER_DIR"
 cat > "$HEIMDAL_HELPER_DIR/aioswiki" <<EOF
 #!/bin/sh
@@ -340,7 +341,7 @@ project-open() { command "$HEIMDAL_BIN" project-open "$@"; }
 if [ -n "$HEIMDAL_ENTRY_ECHO" ]; then
   echo "$HEIMDAL_ENTRY_ECHO"
 fi
-HEIMDAL_HELPER_DIR="$(mktemp -d 2>/dev/null || echo /tmp/heimdal-helpers-$$)"
+HEIMDAL_HELPER_DIR="${HEIMDAL_HELPER_DIR:-$HOME/.heimdall/sessions/$HEIMDAL_SESSION/bin}"
 mkdir -p "$HEIMDAL_HELPER_DIR"
 cat > "$HEIMDAL_HELPER_DIR/aioswiki" <<EOF
 #!/bin/sh
