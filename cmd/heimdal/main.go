@@ -138,6 +138,13 @@ func usage(prog string) {
 }
 
 func cmdShell(prefix string) error {
+    return cmdShellWith(prefix, "", false, nil)
+}
+
+// cmdShellWith starts an interactive shell.
+// If fsRoot is non-empty, the shell's working directory is set there and, when restrictOps is true,
+// common mutating commands are overridden to encourage Heimdal project commands.
+func cmdShellWith(prefix, fsRoot string, restrictOps bool, extraEnv map[string]string) error {
     sh := os.Getenv("SHELL")
     if sh == "" {
         sh = "/bin/sh"
@@ -156,6 +163,9 @@ func cmdShell(prefix string) error {
     // Pass the absolute path to this heimdal binary for shell functions
     if exe, err := os.Executable(); err == nil {
         env["HEIMDAL_BIN"] = exe
+    }
+    for k, v := range extraEnv {
+        env[k] = v
     }
 
     var cmd *exec.Cmd
@@ -184,6 +194,15 @@ function wiki() { aioswiki "$@" }
 # Project helpers
 function project-init() { command "$HEIMDAL_BIN" project-init "$@" }
 function project-open() { command "$HEIMDAL_BIN" project-open "$@" }
+` + func() string { if restrictOps { return `
+# Restrict mutating commands inside project shell
+function _heimdal_block(){ echo "[heimdal] disabled here. Use 'heimdal newfile/mkdir/annotate/export' instead." >&2; return 1 }
+alias mkdir=_heimdal_block
+alias mv=_heimdal_block
+alias rm=_heimdal_block
+alias cp=_heimdal_block
+alias touch=_heimdal_block
+` } else { return "" } }() + `
 function _heimdal_prompt_prefix() {
   local p="${HEIMDAL_PREFIX}"
   if [[ -n "$p" ]] && [[ "${PROMPT}" != ${p}* ]]; then
@@ -221,6 +240,15 @@ wiki() { aioswiki "$@"; }
 # Project helpers
 project-init() { command "$HEIMDAL_BIN" project-init "$@"; }
 project-open() { command "$HEIMDAL_BIN" project-open "$@"; }
+` + func() string { if restrictOps { return `
+# Restrict mutating commands inside project shell
+_heimdal_block(){ echo "[heimdal] disabled here. Use 'heimdal newfile/mkdir/annotate/export' instead." >&2; return 1; }
+alias mkdir=_heimdal_block
+alias mv=_heimdal_block
+alias rm=_heimdal_block
+alias cp=_heimdal_block
+alias touch=_heimdal_block
+` } else { return "" } }() + `
 __heimdal_ps1() {
   case "$PS1" in
     ${HEIMDAL_PREFIX}*) ;;
@@ -247,6 +275,11 @@ PROMPT_COMMAND="__heimdal_ps1; ${PROMPT_COMMAND}"
     cmd.Stdin = os.Stdin
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
+    if fsRoot != "" {
+        // ensure exists and set as workdir
+        _ = os.MkdirAll(fsRoot, 0o755)
+        cmd.Dir = fsRoot
+    }
 
     // Rebuild env list
     envList := make([]string, 0, len(env))
@@ -516,15 +549,24 @@ func cmdProjectOpen(name, prefix string) error {
 }
 
 func cmdProjectOpenWithPath(name, dbPath, prefix string) error {
-    // Derive a richer prefix
     if !strings.Contains(prefix, name) {
         prefix = "[hd:" + name + "] "
     }
-    // Set env before spawning shell via temporary shim
-    os.Setenv("HEIMDAL_PROJECT_NAME", name)
-    os.Setenv("HEIMDAL_PROJECT_DB", dbPath)
-    // Create a pseudo project root under session on demand is handled by tools later.
-    return cmdShell(prefix)
+    // Create session to host project fs view
+    cwd, _ := os.Getwd()
+    sess, err := universe.StartSession(cwd)
+    if err != nil { return err }
+    fsRoot := filepath.Join(sess.Dir, "fs", name)
+    extra := map[string]string{
+        "HEIMDAL_PROJECT_NAME": name,
+        "HEIMDAL_PROJECT_DB": dbPath,
+        "HEIMDAL_SESSION": sess.ID,
+        "HEIMDAL_CONTEXT_DIR": sess.ContextDir,
+        "HEIMDAL_WORKDIR": cwd,
+        "HEIMDAL_UNIVERSE": "1",
+    }
+    // Open shell in isolated fs root with restricted mutating commands
+    return cmdShellWith(prefix, fsRoot, true, extra)
 }
 
 func cmdRunWithProject(project, dbPath, app string, rest []string, profile string) error {
