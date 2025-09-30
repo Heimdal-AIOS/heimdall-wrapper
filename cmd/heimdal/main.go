@@ -104,6 +104,7 @@ Usage:
   %s aioswiki search <query>
   %s aioswiki show <title>
   %s aioswiki init
+  %s aioswiki path
   %s wiki search <query>
   %s wiki show <title>
   %s wiki init
@@ -112,7 +113,7 @@ Usage:
 Env/Config:
   Apps manifests in apps/<name>.yaml. Minimal YAML supported: name, cmd, args, env.
 
-`, prog, prog, prog, prog, prog, prog, prog, prog, prog)
+`, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog)
 }
 
 func cmdShell(prefix string) error {
@@ -382,6 +383,9 @@ func cmdWiki(args []string) error {
     case "init":
         if err := wikimod.Init(path); err != nil { return err }
         fmt.Println("initialized wiki at:", path)
+        return nil
+    case "path":
+        fmt.Println(path)
         return nil
     case "search":
         if len(args) < 2 { return errors.New("usage: heimdal wiki search <query>") }
