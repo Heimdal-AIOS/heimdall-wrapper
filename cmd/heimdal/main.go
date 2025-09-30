@@ -886,6 +886,110 @@ func loadShellConfig() ShellConfig {
     return cfg
 }
 
+// --- Instructions & Suggest ---
+func cmdInstructions(args []string) error {
+    txt := buildInstructions()
+    fmt.Println(txt)
+    // If in session, also print where file is
+    if dir := os.Getenv("HEIMDAL_CONTEXT_DIR"); dir != "" {
+        fp := filepath.Join(dir, "heimdal_instructions.txt")
+        fmt.Println("\nInstructions file:", fp)
+    }
+    return nil
+}
+
+func buildInstructions() string {
+    // Minimal, AI-friendly, single-screen instruction
+    b := &strings.Builder{}
+    fmt.Fprintln(b, "Heimdal AI:OS — Command Cheatsheet")
+    fmt.Fprintln(b, "")
+    fmt.Fprintln(b, "Wiki (RAG manpages):")
+    fmt.Fprintln(b, "  aioswiki search <query>")
+    fmt.Fprintln(b, "  aioswiki show <title>")
+    fmt.Fprintln(b, "  aioswiki init | aioswiki path")
+    fmt.Fprintln(b, "")
+    fmt.Fprintln(b, "DB Filesystem (inside project shell):")
+    fmt.Fprintln(b, "  mkdir <path> [@@tags ::AICOM:: // note]")
+    fmt.Fprintln(b, "  newfile <path/name.type> [metadata] [--content \"text\"]")
+    fmt.Fprintln(b, "  ls [path] | cat <path> | pwd")
+    fmt.Fprintln(b, "  append <path> --text \"...\" | annotate <path> --line N \"// note @@tags ::AICOM::\"")
+    fmt.Fprintln(b, "  mv <src> <dst> | rm [-r] <path>")
+    fmt.Fprintln(b, "")
+    fmt.Fprintln(b, "Projects (outside Heimdal):")
+    fmt.Fprintln(b, "  project-init <name> | project-open <name>")
+    fmt.Fprintln(b, "  project-pack <name> [-o name.aiosproj.zip] | project-unpack <zip> [--dest DIR]")
+    fmt.Fprintln(b, "")
+    fmt.Fprintln(b, "Env hints: HEIMDAL_* vars provide session/project info; instructions file in $HEIMDAL_CONTEXT_DIR.")
+    return b.String()
+}
+
+func cmdSuggest(args []string) error {
+    if len(args) == 0 { fmt.Println("Usage: heimdal suggest \"freeform command\""); return nil }
+    input := strings.ToLower(strings.TrimSpace(strings.Join(args, " ")))
+    // Simple regex-based intent detection
+    rx := func(p string) *regexp.Regexp { return regexp.MustCompile(p) }
+    if rx(`\b(aios|wiki)\b`).MatchString(input) && rx(`\bsearch\b`).MatchString(input) {
+        // Extract quoted term
+        m := rx(`"([^"]+)"|'([^']+)'`).FindStringSubmatch(input)
+        term := "<query>"
+        if len(m) >= 2 && m[1] != "" { term = m[1] } else if len(m) >= 3 && m[2] != "" { term = m[2] }
+        fmt.Printf("Suggest: aioswiki search \"%s\"\n", term)
+        return nil
+    }
+    if rx(`\bmkdir\b`).MatchString(input) {
+        m := rx(`mkdir\s+([^\s]+)`).FindStringSubmatch(input)
+        p := "path/to/dir"; if len(m) >= 2 { p = m[1] }
+        fmt.Printf("Suggest: heimdal mkdir %s @@tag ::AICOM:: // note\n", p)
+        return nil
+    }
+    if rx(`\bnew(\s*file)?\b`).MatchString(input) || rx(`\bcreate\b`).MatchString(input) {
+        m := rx(`(newfile|create)\s+([^\s]+)`).FindStringSubmatch(input)
+        p := "path/name.type"; if len(m) >= 3 { p = m[2] }
+        fmt.Printf("Suggest: heimdal newfile %s --content \"text\" @@tag ::AICOM:: // note\n", p)
+        return nil
+    }
+    if rx(`\bappend\b`).MatchString(input) {
+        m := rx(`append\s+([^\s]+)`).FindStringSubmatch(input)
+        p := "path/name.type"; if len(m) >= 2 { p = m[1] }
+        fmt.Printf("Suggest: heimdal append %s --text \"...\"\n", p)
+        return nil
+    }
+    if rx(`\bannotate\b`).MatchString(input) {
+        m := rx(`annotate\s+([^\s]+)`).FindStringSubmatch(input)
+        p := "path/name.type"; if len(m) >= 2 { p = m[1] }
+        fmt.Printf("Suggest: heimdal annotate %s --line 1 \"// note @@tag ::AICOM::\"\n", p)
+        return nil
+    }
+    if rx(`\brm\b|\bdelete\b|\bremove\b`).MatchString(input) {
+        m := rx(`(rm|delete|remove)\s+([^\s]+)`).FindStringSubmatch(input)
+        p := "path"; if len(m) >= 3 { p = m[2] }
+        fmt.Printf("Suggest: heimdal rm %s\n", p)
+        return nil
+    }
+    if rx(`\bmv\b|\bmove\b|\brename\b`).MatchString(input) {
+        fmt.Println("Suggest: heimdal mv <src> <dst>")
+        return nil
+    }
+    if rx(`\bls\b|\blist\b`).MatchString(input) {
+        fmt.Println("Suggest: heimdal ls [path]")
+        return nil
+    }
+    if rx(`\bcat\b|\bshow file\b|\bread\b`).MatchString(input) {
+        fmt.Println("Suggest: heimdal cat <path/to/file>")
+        return nil
+    }
+    if rx(`\bproject\b.*\binit\b`).MatchString(input) {
+        fmt.Println("Suggest: heimdal project-init <name>")
+        return nil
+    }
+    if rx(`\bproject\b.*\bopen\b`).MatchString(input) {
+        fmt.Println("Suggest: heimdal project-open <name>")
+        return nil
+    }
+    // Default help
+    fmt.Println("No specific intent recognized. Try: aioswiki --help or heimdal --help")
+    return nil
+}
 // --- Project support (MVP) ---
 
 // resolveProject tries to find a sqlite file for the given project name.
