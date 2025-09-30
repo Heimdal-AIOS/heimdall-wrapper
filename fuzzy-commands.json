@@ -1,0 +1,17 @@
+{
+  "aliases": {
+    "aios": "aioswiki",
+    "w": "aioswiki",
+    "wiki": "aioswiki"
+  },
+  "commands": [
+    "aioswiki", "wiki", "project-init", "project-open", "project-info",
+    "run", "shell", "app", "log"
+  ],
+  "fuzzy": {
+    "enabled": true,
+    "threshold": 0.8,
+    "auto_execute": false
+  }
+}
+

@@ -13,6 +13,7 @@ import (
     "encoding/json"
 
     "heimdal/internal/config"
+    "heimdal/internal/fuzzy"
     "heimdal/internal/manifest"
     "heimdal/internal/universe"
     wikimod "heimdal/internal/wiki"
@@ -65,6 +66,13 @@ func run(argv []string) error {
         return nil
     }
 
+    // Load fuzzy/aliases config
+    fcfg := fuzzy.Load()
+    // Expand alias if configured
+    if t, ok := fcfg.Aliases[args[0]]; ok {
+        args[0] = t
+    }
+
     switch args[0] {
     case "help", "-h", "--help":
         usage(prog)
@@ -110,7 +118,19 @@ func run(argv []string) error {
             app := rest[0]
             return cmdRunWithProject(first, p, app, rest[1:], profile)
         }
-        // shorthand: heimdal <app> [args...]
+        // shorthand: heimdal <app> [args...] if known commands; otherwise fuzzy suggest
+        known := map[string]bool{"shell":true,"run":true,"app":true,"log":true,"wiki":true,"aioswiki":true,"project-init":true,"project-open":true,"project-info":true}
+        if known[first] {
+            return cmdRun(first, rest, profile)
+        }
+        if fcfg.Fuzzy.Enabled {
+            best, score := fuzzy.Suggest(first, fcfg.Commands)
+            if best != "" && score >= fcfg.Fuzzy.Threshold {
+                fmt.Fprintf(os.Stderr, "Unknown command '%s'. Did you mean '%s'?\n", first, best)
+                return errors.New("unknown command")
+            }
+        }
+        // Fallback to running as app
         return cmdRun(first, rest, profile)
     }
 }
@@ -188,6 +208,19 @@ func cmdShellWith(prefix, fsRoot string, restrictOps bool, extraEnv map[string]s
     host, _ := os.Hostname()
     env["HEIMDAL_USER"] = user
     env["HEIMDAL_HOST"] = host
+    // Pass wiki alias helpers from fuzzy config
+    {
+        fcfg := fuzzy.Load()
+        aliases := []string{}
+        for k, v := range fcfg.Aliases {
+            if v == "aioswiki" || v == "wiki" {
+                aliases = append(aliases, k)
+            }
+        }
+        if len(aliases) > 0 {
+            env["HEIMDAL_WIKI_ALIASES"] = strings.Join(aliases, ",")
+        }
+    }
     for k, v := range extraEnv {
         env[k] = v
     }
@@ -257,6 +290,21 @@ exec "$BIN" wiki "$@"
 EOF
 chmod +x "$HEIMDAL_HELPER_DIR/wiki"
 export PATH="$HEIMDAL_HELPER_DIR:$PATH"
+if [[ -n "$HEIMDAL_WIKI_ALIASES" ]]; then
+  IFS=',' read -r -A __aliases <<< "$HEIMDAL_WIKI_ALIASES"
+  for __a in "${__aliases[@]}"; do
+    cat > "$HEIMDAL_HELPER_DIR/${__a}" <<'EOF'
+#!/bin/sh
+BIN="${HEIMDAL_BIN:-$(command -v heimdal 2>/dev/null)}"
+if [ -z "$BIN" ]; then
+  echo "heimdal binary not found (set HEIMDAL_BIN or add to PATH)" >&2
+  exit 127
+fi
+exec "$BIN" wiki "$@"
+EOF
+    chmod +x "$HEIMDAL_HELPER_DIR/${__a}"
+  done
+fi
 ` + func() string { if restrictOps { return `
 # Restrict mutating commands inside project shell
 function _heimdal_block(){ echo "[heimdal] disabled here. Use 'heimdal newfile/mkdir/annotate/export' instead." >&2; return 1 }
@@ -374,6 +422,21 @@ exec "$BIN" wiki "$@"
 EOF
 chmod +x "$HEIMDAL_HELPER_DIR/wiki"
 export PATH="$HEIMDAL_HELPER_DIR:$PATH"
+if [ -n "$HEIMDAL_WIKI_ALIASES" ]; then
+  IFS=',' read -r -a __aliases <<< "$HEIMDAL_WIKI_ALIASES"
+  for __a in "${__aliases[@]}"; do
+    cat > "$HEIMDAL_HELPER_DIR/${__a}" <<'EOF'
+#!/bin/sh
+BIN="${HEIMDAL_BIN:-$(command -v heimdal 2>/dev/null)}"
+if [ -z "$BIN" ]; then
+  echo "heimdal binary not found (set HEIMDAL_BIN or add to PATH)" >&2
+  exit 127
+fi
+exec "$BIN" wiki "$@"
+EOF
+    chmod +x "$HEIMDAL_HELPER_DIR/${__a}"
+  done
+fi
 ` + func() string { if restrictOps { return `
 # Restrict mutating commands inside project shell
 _heimdal_block(){ echo "[heimdal] disabled here. Use 'heimdal newfile/mkdir/annotate/export' instead." >&2; return 1; }
