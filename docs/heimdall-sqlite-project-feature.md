@@ -1,13 +1,13 @@
-# Heimdall SQLite Project Feature — Designnotat (aligneret med lars.md)
+# Heimdall SQLite Project Feature — Designnotat (Indefra‑paradigme)
 
 ## Formål
 - AI:OS projekter er “datadrevne”: en `.sqlite` pr. projekt er sandheden; mappestruktur i Heimdal er en visning/illusion oven på relationer.
 - Gem sessions, kørselshistorik, “flatfiles” (linjer), foldere (relationer), tags og annoteringer i DB.
 
 ## 1) Projektlivscyklus
-- Opret: `heimdal --project "NAME"` eller inde i shell: `heimdal project-init NAME`.
-- Resultat: udenfor skabes `NAME.sqlite`; inde i Heimdal skabes mappen `/NAME/` som AI:OS‑roden for projektet.
-- Start projekt: `heimdal NAME <app>` åbner universet med `/NAME` som rod og med DB bundet til sessionen.
+- Opret (ude): `heimdal project-init NAME` (opretter `NAME.aiosproj/` bundle med `project.sqlite`, `rc/`, `meta.json`).
+- Åbn (ude): `heimdal project-open NAME` → inde i [hd:NAME] shell er rod “/” (virtuelt), og OS‑kommandoer er mappet til DB‑lag.
+- Start AI‑coder (ude): `heimdal NAME <aicoder> [args…]` (preprompt kan injiceres; se nedenfor).
 
 ### Oprettelse (trin‑for‑trin)
 1) Initier projektet
@@ -33,16 +33,17 @@ heimdal (inde i [hd]-sessionen):
     context/                    # session/context-filer
 ```
 
-## 2) Datamodel: flatfiles, foldere og annotationer
+## 2) Indefra: Flatfiles, foldere og annotationer
 - Flatfile = en “fil” hvor hver linje er et felt; folder = relation (samling af flatfiles).
 - Annotationer på linjeniveau:
   - `// note` flytter teksten til sideløbende felt (`side`/note).
   - `@@tag1,tag2` lægger tags på linjen.
   - `::...::` markerer AICOM (AI‑DSL) feltet for kommunikation/styring.
-- Kommandoer (eksempler):
-  - `heimdal newfile path/name.type` → opretter flatfile + første linje.
-  - `heimdal mkdir path/folder` → opretter relation/folder.
-  - `heimdal annotate path/name.type --line N "// comment @@tag ::aicom::"` → opdaterer felter for linje N.
+- Inde i [hd]-shell mappes OS‑kommandoer til DB‑lag: `mkdir`, `ls`, `cat`, `mv`, `rm`, `pwd`, `newfile` (samt aliaser `mk`, `nf`, `ll`, `ct`, `ap`, `an`).
+- Eksempler:
+  - `mkdir path/folder @@docs ::Design:: //top`
+  - `newfile path/name.type --content "Hello"`
+  - `annotate path/name.type --line 1 "// note @@tag ::aicom::"`
 
 ## Skema (forslag)
 ```sql
@@ -121,20 +122,24 @@ CREATE TABLE IF NOT EXISTS artifacts (
 );
 ```
 
-## CLI‑design (forslag)
-- Projekt: `heimdal project-init NAME`, `heimdal project-open NAME`, `heimdal project-info`.
-- Filer: `heimdal newfile path/name.type`, `heimdal mkdir path/folder`.
-- Annotationer: `heimdal annotate path/name.type --line N "// .. @@tag ::dsl::"`.
-- Historik: `heimdal run <app> [args...] --record`, `heimdal log tail --from-db`.
+## CLI‑design (indefra/ude)
+- Ude (lifecycle): `heimdal project-init|open|pack|unpack|migrate`.
+- Inde (arbejde): brug mappede kommandoer `mkdir/newfile/ls/cat/mv/rm/pwd` (+ aliaser) — de går via DB.
+- Annotationer: `annotate path --line N "// note @@tag ::dsl::"`.
 
-## 3) RAG
+## 3) RAG & Wiki
 - RAG på tværs af felter og typer: søg i `file_lines.content/side/aicom` og `line_tags`.
 - Start simpelt med FTS5 + tag‑filter; senere embeddings/semantic search.
 - Mål: sprog‑neutral, DRY‑fremmende, intuitiv navigation efter funktion, klasse, tags.
+- Wiki kun via `aioswiki` (global `~/.heimdall/wiki.json`); direkte adgang til wiki.json/supportfiler er blokeret i shell.
 
 ## 4) Eksport
 - Én samlet fil pr. type eller separat filstruktur.
 - Håndtér afhængigheder via linter/rewriter, så dubletter undgås.
+
+## 5) Preprompt/Instructions
+- Heimdal genererer `$HEIMDAL_CONTEXT_DIR/heimdal_instructions.txt` når et projekt åbnes/køres.
+- Sæt `"inject_preprompt": true` i `shell.json` (repo eller `~/.heimdall/shell.json`) for automatisk at injicere instruktionen på stdin til AI‑coders (ved `heimdal NAME <aicoder> …`).
 
 ## Sikkerhed & Privatliv
 - Gem aldrig hemmeligheder; masker kendte nøgler (API_KEY, TOKEN, SECRET).

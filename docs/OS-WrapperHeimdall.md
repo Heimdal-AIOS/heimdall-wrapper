@@ -1,8 +1,8 @@
 # OS-WrapperHeimdall — Vision og DevOps Plan
 
-## Formål
-- Bygge en Go-baseret CLI, der opfører sig som en "OS-wrapper": brugeren starter `heimdall`, som præsenterer en shells/CLI-oplevelse, hvor alt virker som normalt OS – men kører inde i wrapperen.
-- Målet er at kunne "wrappe" andre CLI-apps (fx Claude-Code, Gemini-Cli) og udvide med nye kapabiliteter uden at forstyrre værts-OS'et.
+## Formål (indefra-paradigme)
+- `heimdal` er et AI:OS‑lag, hvor hovedværdien ligger inde i projekt‑shellen. Udefra bruges kun til livscyklus (init/open/pack/unpack) og opstart af AI‑coders.
+- Inde i [hd]-shell føles det som et OS: velkendte kommandoer mappes til DB‑lag og arbejder mod projektets sandhed.
 
 ## MVP-mål (fase 1)
 - Interaktiv shell (`heimdall shell`) med TTY/PTY passthrough, så almindelige kommandoer køres på værts-OS.
@@ -16,14 +16,13 @@
 - Config: Viper-baseret (YAML), isolerede profiler (fx `default`, `dev`, `prod`).
 - Udvidelser: dynamiske "apps" defineret via manifest eller kompilerede plugins.
 
-## CLI-design (forslag)
-- `heimdall shell` — starter wrapper-shell.
-- `heimdall app add <navn> --cmd "gemini" --args "--project X"` — registrér app.
-- `heimdall app ls|rm <navn>` — list/slet registrerede apps.
-- `heimdall run <navn> [args...]` — kør wrapped app med politikker/ miljø.
-- `heimdall log tail` — stream logs fra nuværende session.
- - `heimdal <app> [args...]` — shorthand alias til `heimdall run <app>`.
- - Globale flag: `--profile=permissive|restricted` (default: permissive).
+## CLI‑design
+- Udefra (lifecycle):
+  - `heimdal project-init <navn>`, `heimdal project-open <navn>`, `heimdal project-pack|unpack`, `heimdal project-migrate`.
+  - Start AI‑coder med projekt: `heimdal <navn> <aicoder> [args…]` (kan injicere preprompt/instructions).
+- Indefra (arbejde):
+  - Mappede kommandoer: `mkdir`, `newfile`, `ls`, `cat`, `mv`, `rm`, `pwd` (+ aliaser `mk`, `nf`, `ll`, `ct`, `ap`, `an`).
+  - Wiki kun via `aioswiki` (`search|show|init`).
 
 ## Manifest-eksempel (apps/<navn>.yaml)
 ```yaml
@@ -49,12 +48,10 @@ policies:
   network: allow
 ```
 
-## Kørselsmodel: alias og profiler
-- Alias: `heimdal <app> [args...]` kører som `heimdall run <app>`.
-- Permissiv profil (default): injicerer miljø og logger, men blokerer ikke OS-adgang.
-- Restricted profil: håndhæver policies (netværk/FS) i det omfang OS'et understøtter det.
-- App-opslag: find manifest `apps/<app>.yaml`; hvis mangler, kør `<app>` direkte fra PATH i permissiv mode med logging.
-- Fejl: hvis binær ikke findes, returnér klar fejl med forslag til installation/sti.
+## Kørselsmodel: indefra og preprompt
+- Indefra: brug mappede kommandoer til alt projektarbejde; OS‑kommandoer rammer DB‑laget.
+- Udefra: brug kun lifecycle + opstart af AI‑coder. Sæt `"inject_preprompt": true` i `shell.json` for automatisk at injicere `$HEIMDAL_CONTEXT_DIR/heimdal_instructions.txt` til AI‑coders via stdin ved start.
+- App‑opslag: bruger `apps/<navn>.yaml` hvis tilgængelig; ellers fallback til PATH.
 
 ## Wrapping af CLI-apps
 - Claude-Code: `heimdall app add claude --cmd "claude"`; kør med `heimdal claude -- help`.
@@ -69,9 +66,9 @@ policies:
 - Lint/format: `golangci-lint run` og `gofmt -s -w .`.
 - Release: GitHub Actions (build matrix), version via tags, udgiv binære artefakter.
 
-## Sikkerhed & Isolation
+## Sikkerhed & Wiki
 - Ingen hemmeligheder i repo; brug `.env` og `.env.example`.
-- Politikker pr. app (netværk/FS) håndhæves bedst via OS-mekanismer: namespaces/seccomp (Linux), sandbox-profil (macOS), Job Objects (Windows). MVP kan starte med "policy-as-documentation" og løbende hårdhærdning.
+- Wiki-sti eksponeres ikke; direkte adgang til wiki.json og Heimdal supportfiler blokeres i shell. Al adgang går via `aioswiki`.
 
 ## Roadmap
 1) MVP shell + app-manifest + logging.

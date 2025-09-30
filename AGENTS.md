@@ -57,3 +57,9 @@
 - Security/Guidance: do not expose raw paths to Heimdal support files; route all wiki access via `aioswiki`.
 - Config precedence: repo config (e.g., `shell.json`, `fuzzy-commands.json`) can be overridden by `~/.heimdall/*` when explicitly intended; document any overrides.
 - Refactors: behaviour‑neutral, incremental splits with a passing `make build`. Keep diffs focused and reviewable.
+
+## Inside‑First Paradigm
+- Primary UX is inside the Heimdal project shell. External commands are limited to project lifecycle (init/open/pack/unpack) and scripted startup of AI coders.
+- Inside the shell, map common OS commands to DB‑backed equivalents: `mkdir`, `newfile`, `ls`, `cat`, `mv`, `rm`, `pwd` (+ short aliases).
+- Preprompt: generate `$HEIMDAL_CONTEXT_DIR/heimdal_instructions.txt` and, if `inject_preprompt` is true in `shell.json`, inject it on stdin when launching AI CLIs.
+- Wiki is accessed only via `aioswiki`; direct access to wiki.json and Heimdal support/context files is guarded and blocked in the shell.
