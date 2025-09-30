@@ -49,3 +49,9 @@ If no manifest exists, `heimdal <app>` falls back to running `<app>` from `PATH`
 - Adapters for popular AI CLIs (Claude, Gemini).
 - Policy enforcement for `restricted` profile.
 - Richer wiki/RAG and context providers.
+
+## Shell Config
+- Configure via `shell.json` in repo root or `~/.heimdall/shell.json`.
+- Keys: `shell` (`zsh`|`bash`), `rc_mode` (`project-only`|`project-then-os`|`os-then-project`), `project_rc_dir`, `virtual_path`, `prompt_template` (token `__VPATH__`), `entry_echo`.
+- Project rc files: `<project_rc_dir>/.zshrc` or `<project_rc_dir>/bashrc`.
+- See wiki page: “Shell Configuration (AI:OS)” via `./bin/heimdal aioswiki show "Shell Configuration (AI:OS)"`.
