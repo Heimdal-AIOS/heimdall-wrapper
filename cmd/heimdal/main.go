@@ -14,6 +14,7 @@ import (
     "heimdal/internal/config"
     "heimdal/internal/manifest"
     "heimdal/internal/universe"
+    wikimod "heimdal/internal/wiki"
 )
 
 func main() {
@@ -79,6 +80,8 @@ func run(argv []string) error {
         return cmdApp(args[1:])
     case "log":
         return cmdLog(args[1:])
+    case "wiki":
+        return cmdWiki(args[1:])
     default:
         // shorthand: heimdal <app> [args...]
         app := args[0]
@@ -96,6 +99,9 @@ Usage:
   %s app add <name> --cmd <cmd> [--args "--foo --bar"]
   %s app ls
   %s app rm <name>
+  %s wiki search <query>
+  %s wiki show <title>
+  %s wiki init
   %s [--profile=permissive|restricted] [--prompt-prefix="[hd] "] <app> [args...]  (shorthand)
 
 Env/Config:
@@ -340,6 +346,53 @@ func cmdLog(args []string) error {
     }
     return errors.New("usage: heimdal log tail")
 }
+
+func cmdWiki(args []string) error {
+    if len(args) == 0 { return errors.New("usage: heimdal wiki [search|show|init] ...") }
+    sub := args[0]
+    cwd, _ := os.Getwd()
+    path, err := wikimod.Locate(cwd)
+    if err != nil { return err }
+    switch sub {
+    case "init":
+        if err := wikimod.Init(path); err != nil { return err }
+        fmt.Println("initialized wiki at:", path)
+        return nil
+    case "search":
+        if len(args) < 2 { return errors.New("usage: heimdal wiki search <query>") }
+        return wikiSearch(path, strings.Join(args[1:], " "))
+    case "show":
+        if len(args) < 2 { return errors.New("usage: heimdal wiki show <title>") }
+        return wikiShow(path, strings.Join(args[1:], " "))
+    default:
+        return errors.New("usage: heimdal wiki [search|show|init] ...")
+    }
+}
+
+func wikiSearch(path, query string) error {
+    db, err := wikimod.Load(path)
+    if err != nil { return err }
+    results := wikimod.Search(db, query, 10)
+    if len(results) == 0 {
+        fmt.Println("no results")
+        return nil
+    }
+    for _, r := range results {
+        fmt.Printf("- %s\n  %s\n", r.Title, r.Snippet)
+    }
+    return nil
+}
+
+func wikiShow(path, title string) error {
+    db, err := wikimod.Load(path)
+    if err != nil { return err }
+    if p, ok := wikimod.Show(db, title); ok {
+        fmt.Printf("# %s\n\n%s\n", p.Title, p.Content)
+        return nil
+    }
+    return fmt.Errorf("page not found: %s", title)
+}
+
 
 // splitArgs splits a simple space-delimited string into args.
 // This is a naive splitter; for complex cases provide args via manifest directly.
