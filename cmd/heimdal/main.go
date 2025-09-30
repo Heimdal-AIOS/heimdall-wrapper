@@ -384,13 +384,21 @@ EOF
   done
 fi
 ` + func() string { if restrictOps { return `
-# Restrict mutating commands inside project shell
-function _heimdal_block(){ echo "[heimdal] disabled here. Use 'heimdal newfile/mkdir/annotate/export' instead." >&2; return 1 }
-alias mkdir=_heimdal_block
-alias mv=_heimdal_block
-alias rm=_heimdal_block
-alias cp=_heimdal_block
-alias touch=_heimdal_block
+# Map common OS commands to Heimdal DB-backed equivalents
+alias mkdir='command "$HEIMDAL_BIN" mkdir'
+alias newfile='command "$HEIMDAL_BIN" newfile'
+alias ls='command "$HEIMDAL_BIN" ls'
+alias cat='command "$HEIMDAL_BIN" cat'
+alias mv='command "$HEIMDAL_BIN" mv'
+alias rm='command "$HEIMDAL_BIN" rm'
+alias pwd='command "$HEIMDAL_BIN" pwd'
+# Shortcuts
+alias mk='mkdir'
+alias nf='newfile'
+alias ll='ls'
+alias ct='cat'
+alias ap='command "$HEIMDAL_BIN" append'
+alias an='command "$HEIMDAL_BIN" annotate'
 ` } else { return "" } }() + `
 function __heimdal_vpath(){
   local vr="$HEIMDAL_VROOT"
@@ -546,13 +554,21 @@ EOF
   done
 fi
 ` + func() string { if restrictOps { return `
-# Restrict mutating commands inside project shell
-_heimdal_block(){ echo "[heimdal] disabled here. Use 'heimdal newfile/mkdir/annotate/export' instead." >&2; return 1; }
-alias mkdir=_heimdal_block
-alias mv=_heimdal_block
-alias rm=_heimdal_block
-alias cp=_heimdal_block
-alias touch=_heimdal_block
+# Map common OS commands to Heimdal DB-backed equivalents
+alias mkdir='command "$HEIMDAL_BIN" mkdir'
+alias newfile='command "$HEIMDAL_BIN" newfile'
+alias ls='command "$HEIMDAL_BIN" ls'
+alias cat='command "$HEIMDAL_BIN" cat'
+alias mv='command "$HEIMDAL_BIN" mv'
+alias rm='command "$HEIMDAL_BIN" rm'
+alias pwd='command "$HEIMDAL_BIN" pwd'
+# Shortcuts
+alias mk='mkdir'
+alias nf='newfile'
+alias ll='ls'
+alias ct='cat'
+alias ap='command "$HEIMDAL_BIN" append'
+alias an='command "$HEIMDAL_BIN" annotate'
 ` } else { return "" } }() + `
 __heimdal_vpath(){
   vr="$HEIMDAL_VROOT"; p="$PWD";
