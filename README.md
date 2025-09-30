@@ -43,6 +43,17 @@ If no manifest exists, `heimdal <app>` falls back to running `<app>` from `PATH`
 - Context files: `~/.heimdall/sessions/<id>/context/` (repo_files.txt, docs_files.txt, system.md).
 - Prompt: customize with `--prompt-prefix="[heim] "`.
 
+## Indefra (Inside‑First)
+- Primær UX foregår inde i projektets Heimdal‑shell: `./bin/heimdal project-open <navn>` åbner et miljø med `[hd:<navn>]`‑prompt.
+- Almindelige OS‑kommandoer mappes til DB‑understøttede varianter: `mkdir`, `newfile`, `ls`, `cat`, `mv`, `rm`, `pwd` (+ korte aliaser) for at arbejde mod projektets `project.sqlite`.
+- Wiki kun via `aioswiki` (alias `wiki`); direkte adgang til `wiki.json` og Heimdal‑supportfiler bliver gardet i shell‑shims.
+- Preprompt/instruktioner: `heimdal_instructions.txt` skrives til `$HEIMDAL_CONTEXT_DIR`. Hvis `inject_preprompt` er `true` i `shell.json`, injiceres filens indhold på stdin, når apps startes via `heimdal run` eller inde fra projektshellen.
+- Hurtig demo inde i et projekt:
+  - `./bin/heimdal project-open demo`
+  - `mkdir src // første mappe`
+  - `newfile src/main.py --content "print('hello')" @@demo`
+  - `ls src` og `cat src/main.py`
+
 ## Profiles
 - `--profile=permissive|restricted` flag exists. Current MVP is permissive; policy enforcement (network/FS) will arrive in later iterations.
 
@@ -61,6 +72,19 @@ If no manifest exists, `heimdal <app>` falls back to running `<app>` from `PATH`
 - Keys: `shell` (`zsh`|`bash`), `rc_mode` (`project-only`|`project-then-os`|`os-then-project`), `project_rc_dir`, `virtual_path`, `prompt_template` (token `__VPATH__`), `entry_echo`.
 - Project rc files: `<project_rc_dir>/.zshrc` or `<project_rc_dir>/bashrc`.
 - See wiki page: “Shell Configuration (AI:OS)” via `./bin/heimdal aioswiki show "Shell Configuration (AI:OS)"`.
+
+### Eksempel: `shell.json` med preprompt
+```json
+{
+  "shell": "zsh",
+  "rc_mode": "project-then-os",
+  "project_rc_dir": "rc",
+  "virtual_path": true,
+  "prompt_template": "__VPATH__ %(!.#.$)",
+  "entry_echo": "Velkommen til Heimdal",
+  "inject_preprompt": true
+}
+```
 
 ## CLI Help
 - Outside Heimdal (no session): `./bin/heimdal --help` shows external commands (project-init/open/info, project-pack/unpack, aioswiki, app, run).
