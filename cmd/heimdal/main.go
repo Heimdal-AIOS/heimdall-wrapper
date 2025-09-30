@@ -20,7 +20,6 @@ import (
     "heimdal/internal/fuzzy"
     "heimdal/internal/manifest"
     "heimdal/internal/universe"
-    wikimod "heimdal/internal/wiki"
 )
 
 func main() {
@@ -772,85 +771,7 @@ func cmdLog(args []string) error {
     return errors.New("usage: heimdal log tail")
 }
 
-func cmdWiki(args []string) error {
-    if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-        wikiUsage()
-        return nil
-    }
-    sub := args[0]
-    workdir := os.Getenv("HEIMDAL_WORKDIR")
-    if workdir == "" {
-        workdir, _ = os.Getwd()
-    }
-    path, err := wikimod.Locate(workdir)
-    if err != nil { return err }
-    switch sub {
-    case "init":
-        if err := wikimod.Init(path); err != nil { return err }
-        fmt.Println("initialized wiki at:", path)
-        return nil
-    // 'path' is intentionally unsupported to avoid exposing locations
-    case "search":
-        if len(args) < 2 { return errors.New("usage: heimdal wiki search <query>") }
-        if !fileExists(path) {
-            fmt.Printf("no wiki.json found at %s\n", path)
-            fmt.Println("run: heimdal aioswiki init")
-            return nil
-        }
-        return wikiSearch(path, strings.Join(args[1:], " "))
-    case "show":
-        if len(args) < 2 { return errors.New("usage: heimdal wiki show <title>") }
-        if !fileExists(path) {
-            fmt.Printf("no wiki.json found at %s\n", path)
-            fmt.Println("run: heimdal aioswiki init")
-            return nil
-        }
-        return wikiShow(path, strings.Join(args[1:], " "))
-    default:
-        wikiUsage()
-        return nil
-    }
-}
-
-func wikiSearch(path, query string) error {
-    db, err := wikimod.Load(path)
-    if err != nil { return err }
-    results := wikimod.Search(db, query, 10)
-    if len(results) == 0 {
-        fmt.Println("no results")
-        return nil
-    }
-    for _, r := range results {
-        fmt.Printf("- %s\n  %s\n", r.Title, r.Snippet)
-    }
-    return nil
-}
-
-func wikiShow(path, title string) error {
-    db, err := wikimod.Load(path)
-    if err != nil { return err }
-    if p, ok := wikimod.Show(db, title); ok {
-        fmt.Printf("# %s\n\n%s\n", p.Title, p.Content)
-        return nil
-    }
-    return fmt.Errorf("page not found: %s", title)
-}
-
-func wikiUsage() {
-    // Attempt to show where wiki.json would be located for context
-    fmt.Println("aioswiki — Heimdal Wiki (RAG manpages)")
-    fmt.Println()
-    fmt.Println("Usage:")
-    fmt.Println("  aioswiki search <query>")
-    fmt.Println("  aioswiki show <title>")
-    fmt.Println("  aioswiki init")
-    fmt.Println()
-}
-
-func fileExists(p string) bool {
-    st, err := os.Stat(p)
-    return err == nil && !st.IsDir()
-}
+// wiki commands moved to wiki_cmd.go
 
 
 // splitArgs splits a simple space-delimited string into args.
@@ -1022,7 +943,7 @@ func cmdProjectInit(name string) error {
     if err := initProjectDB(p); err != nil {
         // Graceful: write .sql next to DB and inform the user
         sqlPath := p + ".init.sql"
-        _ = os.WriteFile(sqlPath, []byte(projectInitSQL(filepath.Dir(p))), 0o644)
+        _ = os.WriteFile(sqlPath, []byte(mustLoadSchemaSQL(filepath.Dir(p))), 0o644)
         fmt.Println("created bundle:", bundle)
         fmt.Println("db:", p)
         fmt.Println("note: sqlite3 not found or init failed. Run manually:")
@@ -1289,7 +1210,7 @@ func initProjectDB(dbPath string) error {
     if _, err := exec.LookPath("sqlite3"); err != nil {
         return err
     }
-    sql := projectInitSQL(filepath.Dir(dbPath))
+    sql := mustLoadSchemaSQL(filepath.Dir(dbPath))
     cmd := exec.Command("sqlite3", dbPath)
     cmd.Stdin = bytes.NewBufferString(sql)
     cmd.Stdout = os.Stdout
@@ -1297,8 +1218,23 @@ func initProjectDB(dbPath string) error {
     return cmd.Run()
 }
 
-func projectInitSQL(projectRoot string) string {
-    // Minimal v1 schema + metadata. Extend as needed.
+func mustLoadSchemaSQL(projectRoot string) string {
+    // Load from templates/sql/schema_v1.sql (repo) or ~/.heimdall/templates/sql/schema_v1.sql
+    candidates := []string{
+        filepath.Join(getCWD(), "templates", "sql", "schema_v1.sql"),
+    }
+    if h, err := os.UserHomeDir(); err == nil {
+        candidates = append(candidates, filepath.Join(h, ".heimdall", "templates", "sql", "schema_v1.sql"))
+    }
+    escapedRoot := escapeSQL(projectRoot)
+    for _, p := range candidates {
+        if b, err := os.ReadFile(p); err == nil {
+            s := string(b)
+            s = strings.ReplaceAll(s, "{{PROJECT_ROOT}}", escapedRoot)
+            return s
+        }
+    }
+    // Fallback to embedded minimal schema
     return fmt.Sprintf(`PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 BEGIN;
@@ -1331,13 +1267,12 @@ CREATE TABLE IF NOT EXISTS runs (
   FOREIGN KEY(session_id) REFERENCES sessions(id)
 );
 
--- Files/Flatfiles schema (MVP)
 CREATE TABLE IF NOT EXISTS files (
   id INTEGER PRIMARY KEY,
   project_id INTEGER NOT NULL,
   path TEXT NOT NULL,
   name TEXT NOT NULL,
-  type TEXT NOT NULL,               -- 'dir'|'file'
+  type TEXT NOT NULL,
   note TEXT,
   aicom TEXT,
   created_at TEXT NOT NULL,
@@ -1362,9 +1297,11 @@ CREATE TABLE IF NOT EXISTS file_lines (
   UNIQUE(file_id, lineno),
   FOREIGN KEY(file_id) REFERENCES files(id)
 );
-COMMIT;`, escapeSQL(projectRoot))
+COMMIT;`, escapedRoot)
 }
 
 func escapeSQL(s string) string { return strings.ReplaceAll(s, "'", "''") }
+
+func getCWD() string { d, _ := os.Getwd(); return d }
 
 // FS commands moved to fs_cmd.go
