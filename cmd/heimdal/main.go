@@ -115,30 +115,26 @@ func run(argv []string) error {
 }
 
 func usage(prog string) {
-    fmt.Printf(`Heimdal — OS Wrapper CLI (MVP)
-
-Usage:
-  %s shell
-  %s run <app> [args...]
-  %s app add <name> --cmd <cmd> [--args "--foo --bar"]
-  %s app ls
-  %s app rm <name>
-  %s project-init <name>
-  %s project-open <name>
-  %s project-info [name]
-  %s aioswiki search <query>
-  %s aioswiki show <title>
-  %s aioswiki init
-  %s aioswiki path
-  %s wiki search <query>
-  %s wiki show <title>
-  %s wiki init
-  %s [--profile=permissive|restricted] [--prompt-prefix="[hd] "] <app> [args...]  (shorthand)
-
-Env/Config:
-  Apps manifests in apps/<name>.yaml. Minimal YAML supported: name, cmd, args, env.
-
-`, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog)
+    fmt.Println("Heimdal — OS Wrapper CLI (MVP)\n")
+    fmt.Println("Usage:")
+    fmt.Printf("  %s shell\n", prog)
+    fmt.Printf("  %s run <app> [args...]\n", prog)
+    fmt.Printf("  %s app add <name> --cmd <cmd> [--args \"--foo --bar\"]\n", prog)
+    fmt.Printf("  %s app ls\n", prog)
+    fmt.Printf("  %s app rm <name>\n", prog)
+    fmt.Printf("  %s project-init <name>\n", prog)
+    fmt.Printf("  %s project-open <name>\n", prog)
+    fmt.Printf("  %s project-info [name]\n", prog)
+    fmt.Printf("  %s aioswiki search <query>\n", prog)
+    fmt.Printf("  %s aioswiki show <title>\n", prog)
+    fmt.Printf("  %s aioswiki init\n", prog)
+    fmt.Printf("  %s aioswiki path\n", prog)
+    fmt.Printf("  %s wiki search <query>\n", prog)
+    fmt.Printf("  %s wiki show <title>\n", prog)
+    fmt.Printf("  %s wiki init\n", prog)
+    fmt.Printf("  %s [--profile=permissive|restricted] [--prompt-prefix=\"[hd] \"] <app> [args...]  (shorthand)\n", prog)
+    fmt.Println("\nEnv/Config:")
+    fmt.Println("  Apps manifests in apps/<name>.yaml. Minimal YAML supported: name, cmd, args, env.")
 }
 
 func cmdShell(prefix string) error {
