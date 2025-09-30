@@ -21,20 +21,13 @@ type DB struct {
 
 // Locate looks for wiki.json starting from workdir.
 func Locate(workdir string) (string, error) {
-    // Prefer repo local wiki.json
-    p := filepath.Join(workdir, "wiki.json")
-    if _, err := os.Stat(p); err == nil {
-        return p, nil
-    }
-    // Fallback: ~/.heimdall/wiki.json
+    // Enforce global wiki only to steer tools via aioswiki
     if h, err := os.UserHomeDir(); err == nil {
         hp := filepath.Join(h, ".heimdall", "wiki.json")
-        if _, err := os.Stat(hp); err == nil {
-            return hp, nil
-        }
-        return hp, nil // path to create
+        return hp, nil
     }
-    return p, nil
+    // Fallback to CWD as last resort (should not happen often)
+    return filepath.Join(workdir, "wiki.json"), nil
 }
 
 func Load(path string) (DB, error) {

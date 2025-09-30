@@ -352,6 +352,29 @@ if [ -z "$BIN" ]; then
   echo "heimdal binary not found (set HEIMDAL_BIN or add to PATH)" >&2
   exit 127
 fi
+# Guard direct access to repo wiki.json to encourage aioswiki usage
+function __heimdal_guard_cat(){
+  local args=("$@")
+  for a in "${args[@]}"; do
+    if [[ "$a" == */wiki.json || "$a" == wiki.json ]]; then
+      echo "[heimdal] Direct wiki.json access is disabled. Use 'aioswiki ...' instead." >&2
+      return 1
+    fi
+  done
+  command cat "$@"
+}
+function __heimdal_guard_less(){
+  local args=("$@")
+  for a in "${args[@]}"; do
+    if [[ "$a" == */wiki.json || "$a" == wiki.json ]]; then
+      echo "[heimdal] Direct wiki.json access is disabled. Use 'aioswiki ...' instead." >&2
+      return 1
+    fi
+  done
+  command less "$@"
+}
+alias cat=__heimdal_guard_cat
+alias less=__heimdal_guard_less
 exec "$BIN" wiki "$@"
 EOF
     chmod +x "$HEIMDAL_HELPER_DIR/${__a}"
@@ -484,6 +507,28 @@ if [ -z "$BIN" ]; then
   echo "heimdal binary not found (set HEIMDAL_BIN or add to PATH)" >&2
   exit 127
 fi
+__heimdal_guard_cat(){
+  for a in "$@"; do
+    case "$a" in
+      */wiki.json|wiki.json)
+        echo "[heimdal] Direct wiki.json access is disabled. Use 'aioswiki ...' instead." >&2
+        return 1 ;;
+    esac
+  done
+  command cat "$@"
+}
+__heimdal_guard_less(){
+  for a in "$@"; do
+    case "$a" in
+      */wiki.json|wiki.json)
+        echo "[heimdal] Direct wiki.json access is disabled. Use 'aioswiki ...' instead." >&2
+        return 1 ;;
+    esac
+  done
+  command less "$@"
+}
+alias cat=__heimdal_guard_cat
+alias less=__heimdal_guard_less
 exec "$BIN" wiki "$@"
 EOF
     chmod +x "$HEIMDAL_HELPER_DIR/${__a}"
