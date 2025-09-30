@@ -34,6 +34,7 @@ func run(argv []string) error {
     //  - run <app> [args...]
     //  - app add <name> --cmd <cmd> [--args "..."]
     //  - app ls | app rm <name>
+    //  - projects: project-init NAME | project-open NAME | project-info [NAME]
     //  - shorthand: heimdal <app> [args...]
 
     prog := filepath.Base(argv[0])
@@ -76,6 +77,16 @@ func run(argv []string) error {
         app := args[1]
         rest := args[2:]
         return cmdRun(app, rest, profile)
+    case "project-init":
+        if len(args) < 2 { return errors.New("usage: heimdal project-init <name>") }
+        return cmdProjectInit(args[1])
+    case "project-open":
+        if len(args) < 2 { return errors.New("usage: heimdal project-open <name>") }
+        return cmdProjectOpen(args[1], promptPrefix)
+    case "project-info":
+        name := ""
+        if len(args) >= 2 { name = args[1] }
+        return cmdProjectInfo(name)
     case "app":
         return cmdApp(args[1:])
     case "log":
@@ -85,10 +96,21 @@ func run(argv []string) error {
     case "aioswiki": // alias for wiki
         return cmdWiki(args[1:])
     default:
-        // shorthand: heimdal <app> [args...]
-        app := args[0]
+        // Try to interpret first token as a project
+        first := args[0]
         rest := args[1:]
-        return cmdRun(app, rest, profile)
+        if len(rest) >= 1 && rest[0] == "shell" {
+            if p, ok := resolveProject(first); ok {
+                return cmdProjectOpenWithPath(first, p, promptPrefix)
+            }
+        }
+        if p, ok := resolveProject(first); ok {
+            if len(rest) == 0 { return errors.New("usage: heimdal <project> <app> [args...]") }
+            app := rest[0]
+            return cmdRunWithProject(first, p, app, rest[1:], profile)
+        }
+        // shorthand: heimdal <app> [args...]
+        return cmdRun(first, rest, profile)
     }
 }
 
@@ -101,6 +123,9 @@ Usage:
   %s app add <name> --cmd <cmd> [--args "--foo --bar"]
   %s app ls
   %s app rm <name>
+  %s project-init <name>
+  %s project-open <name>
+  %s project-info [name]
   %s aioswiki search <query>
   %s aioswiki show <title>
   %s aioswiki init
@@ -113,7 +138,7 @@ Usage:
 Env/Config:
   Apps manifests in apps/<name>.yaml. Minimal YAML supported: name, cmd, args, env.
 
-`, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog)
+`, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog, prog)
 }
 
 func cmdShell(prefix string) error {
@@ -160,6 +185,9 @@ fi
 # Built-in wiki functions
 function aioswiki() { command "$HEIMDAL_BIN" wiki "$@" }
 function wiki() { aioswiki "$@" }
+# Project helpers
+function project-init() { command "$HEIMDAL_BIN" project-init "$@" }
+function project-open() { command "$HEIMDAL_BIN" project-open "$@" }
 function _heimdal_prompt_prefix() {
   local p="${HEIMDAL_PREFIX}"
   if [[ -n "$p" ]] && [[ "${PROMPT}" != ${p}* ]]; then
@@ -194,6 +222,9 @@ fi
 # Built-in wiki functions
 aioswiki() { command "$HEIMDAL_BIN" wiki "$@"; }
 wiki() { aioswiki "$@"; }
+# Project helpers
+project-init() { command "$HEIMDAL_BIN" project-init "$@"; }
+project-open() { command "$HEIMDAL_BIN" project-open "$@"; }
 __heimdal_ps1() {
   case "$PS1" in
     ${HEIMDAL_PREFIX}*) ;;
@@ -431,4 +462,144 @@ func splitArgs(s string) []string {
     // Do not attempt full shell parsing; split on spaces.
     parts := strings.Fields(s)
     return parts
+}
+
+// --- Project support (MVP) ---
+
+// resolveProject tries to find a sqlite file for the given project name.
+// It looks in CWD as ./NAME.sqlite, then in ~/.heimdall/projects/NAME.sqlite.
+func resolveProject(name string) (string, bool) {
+    if name == "" { return "", false }
+    // CWD
+    cwd, _ := os.Getwd()
+    p := filepath.Join(cwd, name+".sqlite")
+    if st, err := os.Stat(p); err == nil && !st.IsDir() {
+        return p, true
+    }
+    // Home dir fallback
+    if h, err := os.UserHomeDir(); err == nil {
+        p = filepath.Join(h, ".heimdall", "projects", name+".sqlite")
+        if st, err := os.Stat(p); err == nil && !st.IsDir() {
+            return p, true
+        }
+    }
+    return "", false
+}
+
+func ensureProjectPath(name string) (string, error) {
+    // Prefer CWD
+    cwd, _ := os.Getwd()
+    p := filepath.Join(cwd, name+".sqlite")
+    if err := os.WriteFile(p, []byte{}, 0o644); err == nil {
+        return p, nil
+    }
+    // Fallback to ~/.heimdall/projects
+    h, err := os.UserHomeDir()
+    if err != nil { return "", err }
+    dir := filepath.Join(h, ".heimdall", "projects")
+    if err := os.MkdirAll(dir, 0o755); err != nil { return "", err }
+    p = filepath.Join(dir, name+".sqlite")
+    if err := os.WriteFile(p, []byte{}, 0o644); err != nil { return "", err }
+    return p, nil
+}
+
+func cmdProjectInit(name string) error {
+    if _, ok := resolveProject(name); ok {
+        return fmt.Errorf("project already exists: %s", name)
+    }
+    p, err := ensureProjectPath(name)
+    if err != nil { return err }
+    fmt.Println("created:", p)
+    return nil
+}
+
+func cmdProjectOpen(name, prefix string) error {
+    p, ok := resolveProject(name)
+    if !ok { return fmt.Errorf("project not found: %s", name) }
+    return cmdProjectOpenWithPath(name, p, prefix)
+}
+
+func cmdProjectOpenWithPath(name, dbPath, prefix string) error {
+    // Derive a richer prefix
+    if !strings.Contains(prefix, name) {
+        prefix = "[hd:" + name + "] "
+    }
+    // Set env before spawning shell via temporary shim
+    os.Setenv("HEIMDAL_PROJECT_NAME", name)
+    os.Setenv("HEIMDAL_PROJECT_DB", dbPath)
+    // Create a pseudo project root under session on demand is handled by tools later.
+    return cmdShell(prefix)
+}
+
+func cmdRunWithProject(project, dbPath, app string, rest []string, profile string) error {
+    // Create a session and set project env then run app
+    cwd, _ := os.Getwd()
+    sess, err := universe.StartSession(cwd)
+    if err != nil { return err }
+
+    appsDir, err := config.EnsureAppsDir()
+    if err != nil { return err }
+    maniPath := filepath.Join(appsDir, app+".yaml")
+    var m manifest.Manifest
+    if _, err := os.Stat(maniPath); err == nil {
+        m, err = manifest.Load(maniPath)
+        if err != nil { return fmt.Errorf("load manifest: %w", err) }
+    } else {
+        m = manifest.Manifest{Name: app, Cmd: app}
+    }
+    cmdName := m.Cmd
+    cmdArgs := append([]string{}, m.Args...)
+    cmdArgs = append(cmdArgs, rest...)
+
+    envMap := map[string]string{}
+    for _, kv := range os.Environ() {
+        if i := strings.IndexByte(kv, '='); i >= 0 {
+            envMap[kv[:i]] = kv[i+1:]
+        }
+    }
+    envMap["HEIMDAL"] = "1"
+    envMap["HEIMDAL_UNIVERSE"] = "1"
+    envMap["HEIMDAL_SESSION"] = sess.ID
+    envMap["HEIMDAL_CONTEXT_DIR"] = sess.ContextDir
+    envMap["HEIMDAL_WORKDIR"] = cwd
+    envMap["HEIMDAL_PROJECT_NAME"] = project
+    envMap["HEIMDAL_PROJECT_DB"] = dbPath
+    for k, v := range m.Env { envMap[k] = os.ExpandEnv(v) }
+    envList := make([]string, 0, len(envMap))
+    for k, v := range envMap { envList = append(envList, k+"="+v) }
+
+    fmt.Fprintf(os.Stderr, "[heimdal] project=%s app=%s cmd=%s profile=%s\n", project, app, cmdName, profile)
+    cmd := exec.Command(cmdName, cmdArgs...)
+    cmd.Stdin = os.Stdin
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    cmd.Env = envList
+    return cmd.Run()
+}
+
+func cmdProjectInfo(name string) error {
+    if name == "" {
+        // List known (best-effort): scan CWD and ~/.heimdall/projects
+        cwd, _ := os.Getwd()
+        glob, _ := filepath.Glob(filepath.Join(cwd, "*.sqlite"))
+        for _, p := range glob {
+            fmt.Printf("- %s\n", filepath.Base(p))
+        }
+        if h, err := os.UserHomeDir(); err == nil {
+            dir := filepath.Join(h, ".heimdall", "projects")
+            if ents, err := os.ReadDir(dir); err == nil {
+                for _, e := range ents {
+                    if !e.IsDir() && strings.HasSuffix(e.Name(), ".sqlite") {
+                        fmt.Printf("- %s\n", e.Name())
+                    }
+                }
+            }
+        }
+        return nil
+    }
+    if p, ok := resolveProject(name); ok {
+        fmt.Printf("project: %s\npath: %s\n", name, p)
+        return nil
+    }
+    return fmt.Errorf("project not found: %s", name)
 }
