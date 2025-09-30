@@ -156,30 +156,33 @@ func run(argv []string) error {
 }
 
 func usage(prog string) {
-    fmt.Println("Heimdal — OS Wrapper CLI (MVP)\n")
-    fmt.Println("Usage:")
-    fmt.Printf("  %s shell\n", prog)
-    fmt.Printf("  %s run <app> [args...]\n", prog)
-    fmt.Printf("  %s app add <name> --cmd <cmd> [--args \"--foo --bar\"]\n", prog)
-    fmt.Printf("  %s app ls\n", prog)
-    fmt.Printf("  %s app rm <name>\n", prog)
-    fmt.Printf("  %s project-init <name>\n", prog)
-    fmt.Printf("  %s project-open <name>\n", prog)
-    fmt.Printf("  %s project-info [name]\n", prog)
-    fmt.Printf("  %s project-pack <name> [-o output.zip]\n", prog)
-    fmt.Printf("  %s project-unpack <archive.zip> [--dest DIR]\n", prog)
-    fmt.Printf("  %s aioswiki search <query>\n", prog)
-    fmt.Printf("  %s aioswiki show <title>\n", prog)
-    fmt.Printf("  %s aioswiki init\n", prog)
-    fmt.Printf("  %s aioswiki path\n", prog)
-    fmt.Printf("  %s wiki search <query>\n", prog)
-    fmt.Printf("  %s wiki show <title>\n", prog)
-    fmt.Printf("  %s wiki init\n", prog)
-    fmt.Printf("  %s [--profile=permissive|restricted] [--prompt-prefix=\"[hd] \"] <app> [args...]  (shorthand)\n", prog)
-    fmt.Printf("  %s config fuzzy show|reload\n", prog)
+    inSession := os.Getenv("HEIMDAL_SESSION") != ""
+    fmt.Println("Heimdal — AI:OS Wrapper CLI\n")
+    if !inSession {
+        fmt.Println("Outside Heimdal (project/system commands):")
+        fmt.Printf("  %s project-init <name>\n", prog)
+        fmt.Printf("  %s project-open <name>\n", prog)
+        fmt.Printf("  %s project-info [name]\n", prog)
+        fmt.Printf("  %s project-pack <name> [-o output.zip]\n", prog)
+        fmt.Printf("  %s project-unpack <archive.zip> [--dest DIR]\n", prog)
+        fmt.Printf("  %s aioswiki search|show|init|path\n", prog)
+        fmt.Printf("  %s app add|ls|rm ...\n", prog)
+        fmt.Printf("  %s run <app> [args...]\n", prog)
+        fmt.Printf("  %s shell\n", prog)
+        fmt.Printf("  %s config fuzzy show|reload\n", prog)
+    } else {
+        fmt.Println("Inside Heimdal ([hd] prompt):")
+        fmt.Println("  aioswiki search <q> | show <title> | init | path")
+        fmt.Println("  project-open <name> | project-init <name>")
+        fmt.Println("  app add|ls|rm ...  | run <app> [args...]")
+        fmt.Printf("  %s [--profile=permissive|restricted] [--prompt-prefix=\"[hd] \"] <app> [args...]\n", prog)
+        fmt.Println("  config fuzzy show|reload")
+        fmt.Println()
+        fmt.Println("Note: project-pack/unpack must be run outside Heimdal.")
+    }
     fmt.Println("\nEnv/Config:")
     fmt.Println("  Apps manifests in apps/<name>.yaml. Minimal YAML supported: name, cmd, args, env.")
-    fmt.Println("  Shell config: ./shell.json or ~/.heimdall/shell.json with keys: shell, virtual_path, prompt_template (use __VPATH__ token).")
+    fmt.Println("  Shell config: ./shell.json or ~/.heimdall/shell.json (shell, rc_mode, project_rc_dir, virtual_path, prompt_template, entry_echo).")
 }
 
 func cmdShell(prefix string) error {
