@@ -1479,6 +1479,136 @@ func getFileID(dbPath string, pid int, path string) (int, error) {
     return id, nil
 }
 
+func cmdFSRemove(args []string) error {
+    if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+        fmt.Println("rm — remove file/dir from DB")
+        fmt.Println("Usage: heimdal rm [-r] <path>")
+        return nil
+    }
+    db := os.Getenv("HEIMDAL_PROJECT_DB")
+    if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
+    recursive := false
+    filtered := []string{}
+    for _, a := range args { if a == "-r" { recursive = true } else { filtered = append(filtered, a) } }
+    if len(filtered) < 1 { fmt.Println("Usage: heimdal rm [-r] <path>"); return nil }
+    path := strings.Trim(filtered[0], "/")
+    pid, err := currentProjectID(db); if err != nil { return err }
+    // Check type
+    q := fmt.Sprintf("SELECT type FROM files WHERE project_id=%d AND path='%s';", pid, escapeSQL(path))
+    typ, err := runSQLiteQuery(db, q); if err != nil { return err }
+    typ = strings.TrimSpace(typ)
+    if typ == "" { return fmt.Errorf("not found: %s", path) }
+    if typ == "dir" && !recursive { return errors.New("is a directory; use -r to remove recursively") }
+    if typ == "file" {
+        if err := deleteFileAndData(db, pid, path); err != nil { return err }
+    } else {
+        // recursive delete: find all under prefix
+        prefix := escapeSQL(path)
+        // delete lines
+        _, err := runSQLiteExec(db, fmt.Sprintf("DELETE FROM file_lines WHERE file_id IN (SELECT id FROM files WHERE project_id=%d AND (path='%s' OR path LIKE '%s/%%'));", pid, prefix, prefix))
+        if err != nil { return err }
+        _, err = runSQLiteExec(db, fmt.Sprintf("DELETE FROM file_tags WHERE file_id IN (SELECT id FROM files WHERE project_id=%d AND (path='%s' OR path LIKE '%s/%%'));", pid, prefix, prefix))
+        if err != nil { return err }
+        _, err = runSQLiteExec(db, fmt.Sprintf("DELETE FROM files WHERE project_id=%d AND (path='%s' OR path LIKE '%s/%%');", pid, prefix, prefix))
+        if err != nil { return err }
+    }
+    fmt.Println("ok")
+    return nil
+}
+
+func deleteFileAndData(db string, pid int, path string) error {
+    p := escapeSQL(path)
+    if _, err := runSQLiteExec(db, fmt.Sprintf("DELETE FROM file_lines WHERE file_id IN (SELECT id FROM files WHERE project_id=%d AND path='%s');", pid, p)); err != nil { return err }
+    if _, err := runSQLiteExec(db, fmt.Sprintf("DELETE FROM file_tags WHERE file_id IN (SELECT id FROM files WHERE project_id=%d AND path='%s');", pid, p)); err != nil { return err }
+    if _, err := runSQLiteExec(db, fmt.Sprintf("DELETE FROM files WHERE project_id=%d AND path='%s';", pid, p)); err != nil { return err }
+    return nil
+}
+
+func cmdFSMove(args []string) error {
+    if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+        fmt.Println("mv — move/rename file or directory in DB")
+        fmt.Println("Usage: heimdal mv <src> <dst>")
+        return nil
+    }
+    if len(args) < 2 { fmt.Println("Usage: heimdal mv <src> <dst>"); return nil }
+    db := os.Getenv("HEIMDAL_PROJECT_DB")
+    if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
+    src := strings.Trim(args[0], "/")
+    dst := strings.Trim(args[1], "/")
+    pid, err := currentProjectID(db); if err != nil { return err }
+    // Determine type
+    typ, err := runSQLiteQuery(db, fmt.Sprintf("SELECT type FROM files WHERE project_id=%d AND path='%s';", pid, escapeSQL(src)))
+    if err != nil { return err }
+    typ = strings.TrimSpace(typ)
+    if typ == "" { return fmt.Errorf("not found: %s", src) }
+    if typ == "file" {
+        // Update single file path and name
+        name := filepath.Base(dst)
+        _, err := runSQLiteExec(db, fmt.Sprintf("UPDATE files SET path='%s', name='%s' WHERE project_id=%d AND path='%s';", escapeSQL(dst), escapeSQL(name), pid, escapeSQL(src)))
+        if err != nil { return err }
+        fmt.Println("ok")
+        return nil
+    }
+    // Directory move: update all under prefix
+    // Fetch affected ids and paths
+    out, err := runSQLiteQuery(db, fmt.Sprintf("SELECT id||'\t'||path FROM files WHERE project_id=%d AND (path='%s' OR path LIKE '%s/%%') ORDER BY LENGTH(path);", pid, escapeSQL(src), escapeSQL(src)))
+    if err != nil { return err }
+    lines := strings.Split(strings.TrimSpace(out), "\n")
+    for _, line := range lines {
+        if strings.TrimSpace(line) == "" { continue }
+        parts := strings.SplitN(line, "\t", 2)
+        if len(parts) != 2 { continue }
+        var id int
+        fmt.Sscanf(parts[0], "%d", &id)
+        oldp := parts[1]
+        var newp string
+        if oldp == src { newp = dst } else {
+            tail := strings.TrimPrefix(oldp, src)
+            if strings.HasPrefix(tail, "/") { tail = tail[1:] }
+            if tail == "" { newp = dst } else { newp = dst + "/" + tail }
+        }
+        name := filepath.Base(newp)
+        _, err := runSQLiteExec(db, fmt.Sprintf("UPDATE files SET path='%s', name='%s' WHERE id=%d;", escapeSQL(newp), escapeSQL(name), id))
+        if err != nil { return err }
+    }
+    fmt.Println("ok")
+    return nil
+}
+
+func cmdFSCat(args []string) error {
+    if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+        fmt.Println("cat — print flatfile content from DB")
+        fmt.Println("Usage: heimdal cat <path/to/file>")
+        return nil
+    }
+    db := os.Getenv("HEIMDAL_PROJECT_DB")
+    if db == "" { return errors.New("not in project context: HEIMDAL_PROJECT_DB not set") }
+    path := strings.Trim(args[0], "/")
+    pid, err := currentProjectID(db); if err != nil { return err }
+    fid, err := getFileID(db, pid, path); if err != nil { return err }
+    out, err := runSQLiteQuery(db, fmt.Sprintf("SELECT content FROM file_lines WHERE file_id=%d ORDER BY lineno;", fid))
+    if err != nil { return err }
+    if out != "" { fmt.Print(out) }
+    return nil
+}
+
+func cmdFSPwd(args []string) error {
+    if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+        fmt.Println("pwd — print virtual working directory")
+        fmt.Println("Usage: heimdal pwd")
+        return nil
+    }
+    vroot := os.Getenv("HEIMDAL_VROOT")
+    cwd, _ := os.Getwd()
+    if vroot != "" && strings.HasPrefix(cwd, vroot) {
+        rel := strings.TrimPrefix(cwd, vroot)
+        if rel == "" { fmt.Println("/") } else { fmt.Println("/" + strings.TrimPrefix(rel, "/")) }
+        return nil
+    }
+    fmt.Println(cwd)
+    return nil
+}
+
 func parseMeta(s string) (tags []string, note, aicom string) {
     s = strings.TrimSpace(s)
     if s == "" { return nil, "", "" }
