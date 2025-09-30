@@ -3,6 +3,8 @@ package main
 import (
     "errors"
     "fmt"
+    "io"
+    "bytes"
     "os"
     "os/exec"
     "path/filepath"
@@ -703,6 +705,14 @@ func cmdRun(app string, rest []string, profile string) error {
     cmd.Stderr = os.Stderr
     cmd.Env = envList
 
+    // Optionally inject preprompt (instructions) into stdin first
+    cfg := loadShellConfig()
+    if cfg.InjectPreprompt {
+        instPath := filepath.Join(sess.ContextDir, "heimdal_instructions.txt")
+        if b, err := os.ReadFile(instPath); err == nil {
+            cmd.Stdin = io.MultiReader(bytes.NewReader(b), os.Stdin)
+        }
+    }
     return cmd.Run()
 }
 
@@ -922,6 +932,14 @@ func cmdRunWithProject(project, dbPath, app string, rest []string, profile strin
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
     cmd.Env = envList
+    // Optionally inject preprompt
+    cfg := loadShellConfig()
+    if cfg.InjectPreprompt {
+        instPath := filepath.Join(sess.ContextDir, "heimdal_instructions.txt")
+        if b, err := os.ReadFile(instPath); err == nil {
+            cmd.Stdin = io.MultiReader(bytes.NewReader(b), os.Stdin)
+        }
+    }
     return cmd.Run()
 }
 
