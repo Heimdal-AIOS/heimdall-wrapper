@@ -8,12 +8,12 @@
     {
       "title": "Heimdal Wiki (RAG Manpages)",
       "tags": ["wiki", "rag", "manpages", "docs"],
-      "content": "The Heimdal wiki is a Retrieval-Augmented (RAG) manpage system. Pages in wiki.json are indexed and can be searched at the terminal. Use heimdal aioswiki search <query> to retrieve relevant pages and heimdal aioswiki show <Title> to read them. Over time, Heimdal can feed these pages into tool context so AI CLIs start preloaded with project and platform knowledge. Store this file in the repo root for project-scoped docs, or in ~/.heimdall/wiki.json for global docs."
+      "content": "The Heimdal wiki is a Retrieval-Augmented (RAG) manpage system. Pages in wiki.json are indexed and can be searched at the terminal. Inside Heimdal shell, use: aioswiki search <query> and aioswiki show <Title>. Outside, use: ./bin/heimdal aioswiki ... Over time, Heimdal can feed these pages into tool context so AI CLIs start preloaded with project and platform knowledge. Store this file in the repo root for project-scoped docs, or in ~/.heimdall/wiki.json for global docs."
     },
     {
       "title": "Quick Commands",
       "tags": ["usage", "cli", "getting-started"],
-      "content": "Shell: heimdal shell (prefix [hd] shows the universe).\nRun any app: heimdal <app> [args...] (alias for run <app>).\nAdd an app: heimdal app add claude --cmd claude.\nSearch wiki: heimdal aioswiki search claude.\nShow page: heimdal aioswiki show Welcome to Heimdal AI:OS."
+      "content": "Shell: heimdal shell (prefix [hd] shows the universe).\nRun any app: heimdal <app> [args...] (alias for run <app>).\nAdd an app: heimdal app add claude --cmd claude.\nSearch wiki (inside Heimdal): aioswiki search claude.\nShow page (inside Heimdal): aioswiki show Welcome to Heimdal AI:OS.\nHelp: aioswiki --help"
     },
     {
       "title": "Contributing Wiki Pages",
