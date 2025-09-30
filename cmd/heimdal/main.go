@@ -790,10 +790,7 @@ func cmdWiki(args []string) error {
         if err := wikimod.Init(path); err != nil { return err }
         fmt.Println("initialized wiki at:", path)
         return nil
-    case "path":
-        // Do not disclose actual path; steer usage via aioswiki commands
-        fmt.Println("[aioswiki] path is managed by Heimdal")
-        return nil
+    // 'path' is intentionally unsupported to avoid exposing locations
     case "search":
         if len(args) < 2 { return errors.New("usage: heimdal wiki search <query>") }
         if !fileExists(path) {
@@ -848,7 +845,6 @@ func wikiUsage() {
     fmt.Println("  aioswiki search <query>")
     fmt.Println("  aioswiki show <title>")
     fmt.Println("  aioswiki init")
-    fmt.Println("  aioswiki path   (hidden)")
     fmt.Println()
 }
 
