@@ -19,7 +19,11 @@
       "title": "Contributing Wiki Pages",
       "tags": ["contribute", "docs", "structure"],
       "content": "wiki.json structure: {\"pages\":[{\"title\":string,\"tags\":[string],\"content\":string}...]}. Keep titles unique and concise, add descriptive tags, and write short factual content. For team/project docs, commit wiki.json to the repo. For personal/global notes, keep it under ~/.heimdall/wiki.json."
+    },
+    {
+      "title": "Projects (SQLite) in Heimdal AI:OS",
+      "tags": ["projects", "sqlite", "aios", "setup"],
+      "content": "Project lifecycle in Heimdal AI:OS.\n\nCreate: 'heimdal project-init NAME'.\nResult: creates NAME.sqlite on the host; inside Heimdal the AI:OS root is /NAME/.\nOpen: 'heimdal NAME shell' or 'heimdal project-open NAME'.\nRun apps: 'heimdal NAME <app> [args...]' (opens the universe for NAME and runs the app).\n\nExample structure:\n- host: ./NAME.sqlite (source of truth)\n- inside Heimdal ([hd] session): /NAME/ as AI:OS root with files/, cache/, context/.\n\nNotes:\n- The DB is the truth; exported files are projections.\n- Next steps: flatfiles, folders, and line annotations (//, @@, :: ::) recorded in SQLite for RAG and history."
     }
   ]
 }
-

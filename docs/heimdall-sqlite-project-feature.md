@@ -9,6 +9,30 @@
 - Resultat: udenfor skabes `NAME.sqlite`; inde i Heimdal skabes mappen `/NAME/` som AI:OS‑roden for projektet.
 - Start projekt: `heimdal NAME <app>` åbner universet med `/NAME` som rod og med DB bundet til sessionen.
 
+### Oprettelse (trin‑for‑trin)
+1) Initier projektet
+   - Kommandolinje: `heimdal project-init demo`
+   - Forventet output: opretter filen `demo.sqlite` (udenfor Heimdal‑FS) og registrerer projektet.
+
+2) Åbn AI:OS med projektrod
+   - `heimdal demo shell` eller `heimdal project-open demo`
+   - Inde i [hd]‑shell ses en logisk mappestruktur med `/demo/` som rod for AI:OS.
+
+3) Kør apps i projektkontekst
+   - `heimdal demo claude -- help` (shorthand) eller `heimdal project-open demo && heimdal claude -- help`
+
+Eksempel (forventet struktur/artefakter)
+```
+host-filer:
+  ./demo.sqlite                 # projektets sandhed (DB)
+
+heimdal (inde i [hd]-sessionen):
+  /demo/                        # AI:OS-rod for projektet
+    files/                      # visning af flatfiles (illusorisk)
+    cache/
+    context/                    # session/context-filer
+```
+
 ## 2) Datamodel: flatfiles, foldere og annotationer
 - Flatfile = en “fil” hvor hver linje er et felt; folder = relation (samling af flatfiles).
 - Annotationer på linjeniveau:
