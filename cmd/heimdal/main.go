@@ -1,6 +1,7 @@
 package main
 
 import (
+    "bytes"
     "errors"
     "fmt"
     "os"
@@ -882,7 +883,17 @@ func cmdProjectInit(name string) error {
     }
     p, err := ensureProjectPath(name)
     if err != nil { return err }
-    fmt.Println("created:", p)
+    // Try to initialize DB schema via sqlite3 CLI if available
+    if err := initProjectDB(p); err != nil {
+        // Graceful: write .sql next to DB and inform the user
+        sqlPath := p + ".init.sql"
+        _ = os.WriteFile(sqlPath, []byte(projectInitSQL(filepath.Dir(p))), 0o644)
+        fmt.Println("created:", p)
+        fmt.Println("note: sqlite3 not found or init failed. Run manually:")
+        fmt.Printf("  sqlite3 %s < %s\n", p, sqlPath)
+        return nil
+    }
+    fmt.Println("created and initialized:", p)
     return nil
 }
 
@@ -1010,3 +1021,54 @@ func cmdProjectInfo(name string) error {
     }
     return fmt.Errorf("project not found: %s", name)
 }
+
+// --- Project DB initialization using sqlite3 CLI (no Go driver dependency) ---
+func initProjectDB(dbPath string) error {
+    if _, err := exec.LookPath("sqlite3"); err != nil {
+        return err
+    }
+    sql := projectInitSQL(filepath.Dir(dbPath))
+    cmd := exec.Command("sqlite3", dbPath)
+    cmd.Stdin = bytes.NewBufferString(sql)
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    return cmd.Run()
+}
+
+func projectInitSQL(projectRoot string) string {
+    // Minimal v1 schema + metadata. Extend as needed.
+    return fmt.Sprintf(`PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
+BEGIN;
+CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY);
+INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
+
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY,
+  root TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+INSERT OR IGNORE INTO projects(root, created_at) VALUES ('%s', datetime('now'));
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  project_id INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  profile TEXT NOT NULL,
+  context_dir TEXT NOT NULL,
+  FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+
+CREATE TABLE IF NOT EXISTS runs (
+  id INTEGER PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  app TEXT NOT NULL,
+  cmdline TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  exit_code INTEGER,
+  FOREIGN KEY(session_id) REFERENCES sessions(id)
+);
+COMMIT;`, escapeSQL(projectRoot))
+}
+
+func escapeSQL(s string) string { return strings.ReplaceAll(s, "'", "''") }
